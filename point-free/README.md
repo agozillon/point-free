@@ -1,0 +1,2 @@
+# Clang LibTool point-free
+
