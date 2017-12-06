@@ -20,12 +20,12 @@ Rewriter rewriter;
 int numFunctions = 0;
 
 
-class ExampleVisitor : public RecursiveASTVisitor<ExampleVisitor> {
+class PointFreeVisitor : public RecursiveASTVisitor<PointFreeVisitor> {
 private:
     ASTContext *astContext; // used for getting additional AST info
 
 public:
-    explicit ExampleVisitor(CompilerInstance *CI) 
+    explicit PointFreeVisitor(CompilerInstance *CI) 
       : astContext(&(CI->getASTContext())) // initialize private members
     {
         rewriter.setSourceMgr(astContext->getSourceManager(), astContext->getLangOpts());
@@ -51,33 +51,18 @@ public:
             errs() << "** Rewrote function call\n";
         }
         return true;
-    }
-
-/*
-    virtual bool VisitReturnStmt(ReturnStmt *ret) {
-        rewriter.ReplaceText(ret->getRetValue()->getLocStart(), 6, "val");
-        errs() << "** Rewrote ReturnStmt\n";
-        return true;
-    }
-
-    virtual bool VisitCallExpr(CallExpr *call) {
-        rewriter.ReplaceText(call->getLocStart(), 7, "add5");
-        errs() << "** Rewrote function call\n";
-        return true;
-    }
-*/
 };
 
 
 
-class ExampleASTConsumer : public ASTConsumer {
+class PointFreeASTConsumer : public ASTConsumer {
 private:
-    ExampleVisitor *visitor; // doesn't have to be private
+    PointFreeVisitor *visitor; // doesn't have to be private
 
 public:
     // override the constructor in order to pass CI
-    explicit ExampleASTConsumer(CompilerInstance *CI)
-        : visitor(new ExampleVisitor(CI)) // initialize the visitor
+    explicit PointFreeASTConsumer(CompilerInstance *CI)
+        : visitor(new PointFreeVisitor(CI)) // initialize the visitor
     { }
 
     // override this to call our ExampleVisitor on the entire source file
@@ -87,25 +72,14 @@ public:
         visitor->TraverseDecl(Context.getTranslationUnitDecl());
     }
 
-/*
-    // override this to call our ExampleVisitor on each top-level Decl
-    virtual bool HandleTopLevelDecl(DeclGroupRef DG) {
-        // a DeclGroupRef may have multiple Decls, so we iterate through each one
-        for (DeclGroupRef::iterator i = DG.begin(), e = DG.end(); i != e; i++) {
-            Decl *D = *i;    
-            visitor->TraverseDecl(D); // recursively visit each AST node in Decl "D"
-        }
-        return true;
-    }
-*/
 };
 
 
 
-class ExampleFrontendAction : public ASTFrontendAction {
+class PointFreeFrontendAction : public ASTFrontendAction {
 public:
     virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI, StringRef file) {
-        return new ExampleASTConsumer(&CI); // pass CI pointer to ASTConsumer
+        return new PointFreeASTConsumer(&CI); // pass CI pointer to ASTConsumer
     }
 };
 
@@ -118,7 +92,7 @@ int main(int argc, const char **argv) {
     ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
     // run the Clang Tool, creating a new FrontendAction (explained below)
-    int result = Tool.run(newFrontendActionFactory<ExampleFrontendAction>());
+    int result = Tool.run(newFrontendActionFactory<PointFreeFrontendAction>());
 
     errs() << "\nFound " << numFunctions << " functions.\n\n";
     // print out the rewritten source code ("rewriter" is a global var.)
