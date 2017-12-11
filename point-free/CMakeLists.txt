@@ -25,7 +25,7 @@ target_link_libraries(point-free
   clangLex
   clangParse
   clangRewrite
-  clangRewriteCore
+#  clangRewriteCore
   clangRewriteFrontend
   clangSerialization
   clangSema
