@@ -3,6 +3,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/ASTConsumers.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -11,8 +12,8 @@
 #include "clang/Rewrite/Core/Rewriter.h"
 
 #include <vector>
+#include <string>
 
-using namespace std;
 using namespace clang;
 using namespace clang::driver;
 using namespace clang::tooling;
@@ -28,7 +29,7 @@ public:
     explicit PointFreeVisitor(CompilerInstance *CI) 
       : astContext(&(CI->getASTContext())) // initialize private members
     {
-        rewriter.setSourceMgr(CI->getSourceManager(), CI->getLangOpts()/*astContext->getSourceManager(), astContext->getLangOpts()*/);
+        rewriter.setSourceMgr(CI->getSourceManager(), CI->getLangOpts());
     }
 
     // can be used to access the structure as a template declaration
@@ -37,27 +38,49 @@ public:
     virtual bool VisitClassTemplateDecl(ClassTemplateDecl* ctd) { 
         ctd->dump();
 
+
         std::vector<TemplateTypeParmDecl*> vecTTPD;
 
         for(TemplateParameterList::iterator i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {
             // find Template Parameters 
             if (auto* ttpd = dyn_cast<TemplateTypeParmDecl>(*i)) { 
                 vecTTPD.push_back(ttpd);
-                //rewriter.ReplaceText(declT->getLocStart(), "L");
+                // getLocEnd() for TemplateTypeParmDecls modifies the parameters name no matter its length interestingly.
+                // this also applies to TypeAliasDecl's (Using statements)
+                // rewriter.ReplaceText(ttpd->getLocEnd(), "L");
             }
         }
 
         for (DeclContext::decl_iterator i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
             // TypedefDecl (typedef) && TypeAliasDecl (using) inherit from TypedefNameDecl,
             // so if the code is equivelant for both it is possible to merge them into one.
-            if (auto* tad = dyn_cast<TypeAliasDecl>(*i)) {
-                //tad->getCanonicalDecl()->dump();
-                // changes the "correct" thing, however can't really arbitrarily modify it
-                // without knowing more about what its type consists of / is.
-                // rewriter.ReplaceText(tad->getLocEnd(), "WOOP");
+            if (auto* tad = dyn_cast<TypeAliasDecl>(*i)) { 
+                if (auto* ttpt = dyn_cast<TemplateTypeParmType>(tad->getUnderlyingType().getTypePtr())) {
+                   for (int i = 0; i < vecTTPD.size(); ++i) {
+                       // Can perhaps use getIdentifier to get the length of the type/variables name
+                       if (ttpt->getIdentifier()->getName() == vecTTPD.data()[i]->getIdentifier()->getName()) {
+                           rewriter.ReplaceText(tad->getLocEnd(), "Y");
+                 
+                           if (i < vecTTPD.size()) {
+                            // EMAIL CLANG MAILING LIST ASK IF THERE IS AN APPROPRIATE WAY TO DELETE WHITE SPACE
+                            // THIS WORK AROUND IS.... NOT IDEAL TO SAY THE LEAST!
+                            SourceRange temp = vecTTPD.data()[i]->getSourceRange();
+                            temp.setEnd(temp.getEnd().getLocWithOffset(2));
+                            rewriter.InsertTextAfter(temp.getEnd(), "D"); // NEEDS TO BE MORE AUTOMATED                    
+                            rewriter.RemoveText(temp);
+                            rewriter.ReplaceText(vecTTPD.data()[i + 1]->getSourceRange().getBegin().getLocWithOffset(-1), "");                           
+                           }
+
+                            //rewriter.ReplaceText(SourceRange(SourceLocation::getFromRawEncoding(vecTTPD.data()[i]->getLocEnd().getLocWithOffset(1).getRawEncoding()), SourceLocation::getFromRawEncoding(vecTTPD.data()[i + 1]->getLocStart().getLocWithOffset(-1).getRawEncoding())), ""); 
+                             
+                       }
+                   }
+                }
+                 
             }
 
             if (auto* td = dyn_cast<TypedefDecl>(*i)) {
+
             }
         }
         
@@ -116,6 +139,32 @@ public:
 
 class PointFreeFrontendAction : public ASTFrontendAction {
 public:
+  void EndSourceFileAction() override {
+        SourceManager &SM = rewriter.getSourceMgr();
+        errs() << "** Point Free Conversion for: "
+                    << SM.getFileEntryForID(SM.getMainFileID())->getName() << " complete" << "\n";
+
+        // print out the rewritten source code ("rewriter" is a global var.)
+        // This call segmentation faults if no rewritting has been done.
+        rewriter.getEditBuffer(rewriter.getSourceMgr().getMainFileID()).write(errs());
+        
+        std::string filePath = SM.getFileEntryForID(SM.getMainFileID())->getName();
+        std::size_t pos = filePath.find_last_of("/\\");
+        std::string fileName = filePath.substr(pos+1);
+                
+        if ((pos = fileName.find_last_of(".cpp"))) {
+            fileName = fileName.substr(0, pos - 3) + "_pf.cpp";
+        } else { // couldn't isolate the filename 
+            fileName = "temp_pf.cpp"; 
+        }
+
+        // Now emit the rewritten buffer to a file.
+        std::error_code error_code;
+        raw_fd_ostream outFile(fileName, error_code, sys::fs::F_None);
+        rewriter.getEditBuffer(SM.getMainFileID()).write(outFile); // this will write the result to outFile
+        outFile.close();
+   }
+
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) {
         return std::unique_ptr<PointFreeASTConsumer>(new PointFreeASTConsumer(&CI)); // pass CI pointer to ASTConsumer
     }
@@ -133,10 +182,6 @@ int main(int argc, const char **argv) {
 
     // run the Clang Tool, creating a new FrontendAction (explained below)
     int result = Tool.run(newFrontendActionFactory<PointFreeFrontendAction>().get());
-  
-    // print out the rewritten source code ("rewriter" is a global var.)
-    // This call segmentation faults if no rewritting has been done..I wonder why?
-    rewriter.getEditBuffer(rewriter.getSourceMgr().getMainFileID()).write(errs());
-    
+      
     return result;
 }

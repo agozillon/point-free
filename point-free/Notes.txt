@@ -1,0 +1,3 @@
+if i have to insert an include for the library it can be done through the rewriter, just insert some text! (probably not ideal, what happens when the code is compiled on a different PC with a different file path to the library?) 
+
+Perhaps i can delete white space if I insert a piece of text in its place and then remove it. 
