@@ -4,12 +4,16 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Format/Format.h"
 #include "clang/Frontend/ASTConsumers.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
+#include "clang/Tooling/Core/Replacement.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+
+#include "ClangFormatHelpers/ClangFormatHelpers.h"
 
 #include <vector>
 #include <string>
@@ -66,9 +70,9 @@ public:
                             // THIS WORK AROUND IS.... NOT IDEAL TO SAY THE LEAST!
                             SourceRange temp = vecTTPD.data()[i]->getSourceRange();
                             temp.setEnd(temp.getEnd().getLocWithOffset(2));
-                            rewriter.InsertTextAfter(temp.getEnd(), "D"); // NEEDS TO BE MORE AUTOMATED                    
+                           // rewriter.InsertTextAfter(temp.getEnd(), "D"); // NEEDS TO BE MORE AUTOMATED                    
                             rewriter.RemoveText(temp);
-                            rewriter.ReplaceText(vecTTPD.data()[i + 1]->getSourceRange().getBegin().getLocWithOffset(-1), "");                           
+                           // rewriter.ReplaceText(vecTTPD.data()[i + 1]->getSourceRange().getBegin().getLocWithOffset(-1), "");                           
                            }
 
                             //rewriter.ReplaceText(SourceRange(SourceLocation::getFromRawEncoding(vecTTPD.data()[i]->getLocEnd().getLocWithOffset(1).getRawEncoding()), SourceLocation::getFromRawEncoding(vecTTPD.data()[i + 1]->getLocStart().getLocWithOffset(-1).getRawEncoding())), ""); 
@@ -115,7 +119,6 @@ public:
 };
 
 
-
 class PointFreeASTConsumer : public ASTConsumer {
 private:
     PointFreeVisitor *visitor; // doesn't have to be private
@@ -144,25 +147,59 @@ public:
         errs() << "** Point Free Conversion for: "
                     << SM.getFileEntryForID(SM.getMainFileID())->getName() << " complete" << "\n";
 
-        // print out the rewritten source code ("rewriter" is a global var.)
-        // This call segmentation faults if no rewritting has been done.
-        rewriter.getEditBuffer(rewriter.getSourceMgr().getMainFileID()).write(errs());
-        
-        std::string filePath = SM.getFileEntryForID(SM.getMainFileID())->getName();
-        std::size_t pos = filePath.find_last_of("/\\");
-        std::string fileName = filePath.substr(pos+1);
-                
+        /*********** Write Out Modified File ***********/
+       
+        std::string file = SM.getFileEntryForID(SM.getMainFileID())->getName();
+        std::size_t pos = file.find_last_of("/\\");
+        std::string filePath = file.substr(0,pos);
+        std::string fileName = file.substr(pos+1);
+
         if ((pos = fileName.find_last_of(".cpp"))) {
             fileName = fileName.substr(0, pos - 3) + "_pf.cpp";
         } else { // couldn't isolate the filename 
             fileName = "temp_pf.cpp"; 
         }
 
+        fileName = filePath + "/" + fileName;
+
         // Now emit the rewritten buffer to a file.
         std::error_code error_code;
         raw_fd_ostream outFile(fileName, error_code, sys::fs::F_None);
         rewriter.getEditBuffer(SM.getMainFileID()).write(outFile); // this will write the result to outFile
         outFile.close();
+
+        /*********** Reformat Written File ***********/
+
+        ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr = MemoryBuffer::getFileOrSTDIN(fileName);                        
+
+        if (std::error_code EC = CodeOrErr.getError()) {
+            errs() << EC.message() << "\n";
+            return;
+        }
+
+        std::unique_ptr<llvm::MemoryBuffer> Code = std::move(CodeOrErr.get());
+
+        std::vector<tooling::Range> Ranges;
+        if (fillRanges(Code.get(), Ranges))
+            return;
+
+        format::FormattingAttemptStatus Status;
+        Replacements FormatChanges = reformat(format::getLLVMStyle(), Code->getBuffer(),
+                                              Ranges, fileName, &Status);
+
+        tooling::applyAllReplacements(FormatChanges, rewriter);
+
+        for (Rewriter::buffer_iterator i = rewriter.buffer_begin(), e = rewriter.buffer_end(); i != e; ++i) {
+            auto entry = rewriter.getSourceMgr().getFileEntryForID(i->first); 
+            if(entry->getName() == fileName) {
+                std::error_code error_code;
+                raw_fd_ostream reformatedFile(fileName, error_code, sys::fs::F_None);
+                rewriter.getEditBuffer(i->first).write(reformatedFile);
+                reformatedFile.close();
+                errs() << "\n \n \n \n Output Formatted Buffer: \n";
+                rewriter.getEditBuffer(i->first).write(errs());
+            }
+        }
    }
 
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) {

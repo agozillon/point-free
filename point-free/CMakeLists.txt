@@ -8,9 +8,11 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_clang_tool(point-free
+ ClangFormatHelpers/ClangFormatHelpers.cpp
  PointFree.cpp
- test.c  # Remove test files later, seeing if I can get around having them in the same folder and not crashing cmake.
- test-functions.cpp 
+ TestFiles/test.c  # Remove test files later, seeing if I can get around having them in the same folder and not crashing cmake.
+ TestFiles/test-functions.cpp 
+ TestFiles/TemplateTest.cpp
 )
 
 target_link_libraries(point-free
