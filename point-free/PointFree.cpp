@@ -12,108 +12,189 @@
 #include "clang/Tooling/Tooling.h"
 #include "clang/Tooling/Core/Replacement.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+#include "clang/AST/Type.h"
 
 #include "ClangFormatHelpers/ClangFormatHelpers.h"
+#include "Common.h"
 
 #include <vector>
 #include <string>
+#include <iostream>
 
 using namespace clang;
 using namespace clang::driver;
 using namespace clang::tooling;
 using namespace llvm;
 
+// options
+
+static cl::opt<std::string> StructureName(
+	"structure",cl::init(""),
+	cl::desc("The Structure you wish to be made point free"));
+
+static cl::opt<std::string> TypeAliasOrDefName(
+	"typealiasordef",cl::init(""),
+	cl::desc("The name of the using or type alias in the class you wish to convert"));
+	
 Rewriter rewriter;
 
 class PointFreeVisitor : public RecursiveASTVisitor<PointFreeVisitor> {
 private:
     ASTContext *astContext; // used for getting additional AST info
+	
+	std::vector<TemplateTypeParmDecl*> ttpdVec;
+		
+	CExpr* TransformToCExpr(Decl* d) {
+		errs() << "Entered Decl Transform \n";
+		d->dump();
+		if (auto* tad = dyn_cast<TypeAliasDecl>(d)) {
+			return TransformToCExpr(tad->getUnderlyingType().getTypePtr());
+		}	
+
+		// These need to be treated like App's perhaps some of the others do as well.		
+		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
+			crd->dump();
+		}
+				
+		if(auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {			
+			for (DeclContext::decl_iterator i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
+			   if (auto* tad = dyn_cast<TypeAliasDecl>(*i)) { 
+				CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
+					for(TemplateParameterList::iterator i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
+						if (tCLambdaTop == nullptr) {
+							tCLambdaTop = tCLambdaCurr = new CLambda(); 
+							tCLambdaCurr->pat = new PVar((*i)->getNameAsString()); 
+						} else {
+							tCLambdaCurr->expr = new CLambda();
+							tCLambdaCurr = dynamic_cast<CLambda*>(tCLambdaCurr->expr); 	
+							tCLambdaCurr->pat = new PVar((*i)->getNameAsString());
+						}
+					}
+			
+				    // NOTE: Checking for a name here may not be the best option
+				    // it should probably only be checked for at the top level.
+					if (tad->getNameAsString() == TypeAliasOrDefName) {
+						tCLambdaCurr->expr = TransformToCExpr(*i);
+						return tCLambdaTop;
+					}
+				}
+				
+				// This may have to be considered
+				if (auto* crd = dyn_cast<CXXRecordDecl>(*i)) {
+					 /*tCLambdaCurr->expr =*/ TransformToCExpr(*i);
+				}
+			}
+			
+			
+		}
+
+		return nullptr;
+	}
+	
+	CExpr* TransformToCExpr(const clang::Type* t) {
+		errs() << "Entered Type Transform \n";
+		// could be incorrectly handling this and throwing away 
+		// important information, its of the type something<possiblevalue>::type 
+		if (auto* dnt = dyn_cast<DependentNameType>(t)) {
+			return TransformToCExpr(dnt->getQualifier()->getAsType());
+		} 
+		
+		// a sugared type, things like std::is_polymorphic<T> have a layer of this
+		if (auto* et = dyn_cast<ElaboratedType>(t)) {
+			return TransformToCExpr(et->desugar().getTypePtr());
+		}
+		
+		// same as above, possible loss of information. 
+		if (auto* tst = dyn_cast<TemplateSpecializationType>(t)) {
+			errs() << "entered specialization type \n";
+			tst->getTemplateName().getAsTemplateDecl();
+			errs() << "invoked getAsTemplateDecl \n";
+			return TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
+		}
+		
+		// a template variable like T 
+		if (auto* ttpt = dyn_cast<TemplateTypeParmType>(t)) {
+			
+			return new Var(Prefix, ttpt->getIdentifier()->getName());
+		}
+	
+		// hard-coded type like Int, float, string
+		if (auto* bt = dyn_cast<BuiltinType>(t)) {
+			PrintingPolicy pp = PrintingPolicy(LangOptions());
+			pp.adjustForCPlusPlus();
+			return new Var(Prefix, bt->getNameAsCString(pp));			
+		}
+		
+		errs() << "returning nullptr \n";
+		return nullptr;
+	} 
+	
+	void Print(Pattern* p) {
+		if (p == nullptr)
+			std::cout << "nullptr error \n";
+
+		if (PVar* pVar = dynamic_cast<PVar*>(p)) {
+			std::cout << " (PVar " << pVar->name << ")";
+		}
+	}
+
+	void Print(CExpr* expr) {
+		if (expr == nullptr)
+			std::cout << "nullptr error \n";
+		
+		if (Var* var = dynamic_cast<Var*>(expr)) {				 
+			std::cout << " (Var " << ((var->fix == Fixity::Infix) ? "Infix " : "Prefix ") << var->name << ")";
+		}
+		
+		if (App* app = dynamic_cast<App*>(expr)) {
+			std::cout << " (App ";
+			Print(app->exprL);
+			Print(app->exprR);
+			std::cout << ")";
+		}
+	
+		if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
+			std::cout << " (Lambda ";
+			Print(lambda->pat);
+			Print(lambda->expr);
+			std::cout << ")";
+		}
+  }	
 
 public:
     explicit PointFreeVisitor(CompilerInstance *CI) 
       : astContext(&(CI->getASTContext())) // initialize private members
     {
-        rewriter.setSourceMgr(CI->getSourceManager(), CI->getLangOpts());
+        rewriter.setSourceMgr(CI->getSourceManager(), CI->getLangOpts());	
     }
+
+	// with this you have access to the full tree rooted at the initial node
+	// could be easier to use than Visit perhaps. 
+//	virtual bool TraverseDecl(Decl *x) {	
+//		return true; 
+//	}
 
     // can be used to access the structure as a template declaration
     // however I imagine this will pick up templated functions as well
     // as classes. 
     virtual bool VisitClassTemplateDecl(ClassTemplateDecl* ctd) { 
-        ctd->dump();
-
-
-        std::vector<TemplateTypeParmDecl*> vecTTPD;
-
-        for(TemplateParameterList::iterator i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {
-            // find Template Parameters 
-            if (auto* ttpd = dyn_cast<TemplateTypeParmDecl>(*i)) { 
-                vecTTPD.push_back(ttpd);
-                // getLocEnd() for TemplateTypeParmDecls modifies the parameters name no matter its length interestingly.
-                // this also applies to TypeAliasDecl's (Using statements)
-                // rewriter.ReplaceText(ttpd->getLocEnd(), "L");
-            }
+			       	
+		// Can App's be directly replaced with Eval?	       	
+		if (ctd->getNameAsString() == StructureName) { 
+			ctd->dump();		
+	    	errs() << "\n";
+	    	CExpr* expr = TransformToCExpr(ctd);
+	    	errs() << "ClassTemplateDecl Converted To CExpr: \n";
+	    	Print(expr); 
+	    	std::cout << "\n";	      
+		    errs() << "\n";
+	    	errs() << "\n";
+	    	errs() << "CExpr After Point Free Conversion: \n";
+	    	expr = PointFree(expr);
+			Print(expr);
+			std::cout << "\n";	   
         }
-
-        for (DeclContext::decl_iterator i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
-            // TypedefDecl (typedef) && TypeAliasDecl (using) inherit from TypedefNameDecl,
-            // so if the code is equivelant for both it is possible to merge them into one.
-            if (auto* tad = dyn_cast<TypeAliasDecl>(*i)) { 
-                if (auto* ttpt = dyn_cast<TemplateTypeParmType>(tad->getUnderlyingType().getTypePtr())) {
-                   for (int i = 0; i < vecTTPD.size(); ++i) {
-                       // Can perhaps use getIdentifier to get the length of the type/variables name
-                       if (ttpt->getIdentifier()->getName() == vecTTPD.data()[i]->getIdentifier()->getName()) {
-                           rewriter.ReplaceText(tad->getLocEnd(), "Y");
-                 
-                           if (i < vecTTPD.size()) {
-                            // EMAIL CLANG MAILING LIST ASK IF THERE IS AN APPROPRIATE WAY TO DELETE WHITE SPACE
-                            // THIS WORK AROUND IS.... NOT IDEAL TO SAY THE LEAST!
-                            SourceRange temp = vecTTPD.data()[i]->getSourceRange();
-                            temp.setEnd(temp.getEnd().getLocWithOffset(2));
-                           // rewriter.InsertTextAfter(temp.getEnd(), "D"); // NEEDS TO BE MORE AUTOMATED                    
-                            rewriter.RemoveText(temp);
-                           // rewriter.ReplaceText(vecTTPD.data()[i + 1]->getSourceRange().getBegin().getLocWithOffset(-1), "");                           
-                           }
-
-                            //rewriter.ReplaceText(SourceRange(SourceLocation::getFromRawEncoding(vecTTPD.data()[i]->getLocEnd().getLocWithOffset(1).getRawEncoding()), SourceLocation::getFromRawEncoding(vecTTPD.data()[i + 1]->getLocStart().getLocWithOffset(-1).getRawEncoding())), ""); 
-                             
-                       }
-                   }
-                }
-                 
-            }
-
-            if (auto* td = dyn_cast<TypedefDecl>(*i)) {
-
-            }
-        }
-        
-        return true;
-    }
-
-    // can check what the index is of a TypeParm in a template list, for example  
-    // template <typename X, typename Y> - X is index 0, Y is index 1
-    // can also detect if its referenced (in use) in the template structure
-    // it is in 
-    // Picks up template type parameters, inside template <> declarations
-    virtual bool VisitTemplateTypeParmDecl(TemplateTypeParmDecl* ttpd) {
-//        errs() << "TemplateTypeParmDecl: " << ttpd->getNameAsString() << "\n";
-
-        return true;
-    }
-
-    // The Using statement
-    virtual bool VisitTypeAliasDecl(TypeAliasDecl* tad) {
-//        errs() << "TypeAliasDecl: " << tad->getNameAsString() << "\n";
-
-        return true;
-    }
-
-    // can be used to pick up the template structures defintion, but in this case
-    // its not as a template, but a basic record like a structure or class. 
-    virtual bool VisitCXXRecordDecl(CXXRecordDecl* crd) {
-//        errs() << "CXXRecordDecl: " << crd->getNameAsString() << "\n";
-
+             
         return true;
     }
 };
@@ -144,8 +225,8 @@ class PointFreeFrontendAction : public ASTFrontendAction {
 public:
   void EndSourceFileAction() override {
         SourceManager &SM = rewriter.getSourceMgr();
-        errs() << "** Point Free Conversion for: "
-                    << SM.getFileEntryForID(SM.getMainFileID())->getName() << " complete" << "\n";
+   //     errs() << "** Point Free Conversion for: "
+   //                 << SM.getFileEntryForID(SM.getMainFileID())->getName() << " complete" << "\n";
 
         /*********** Write Out Modified File ***********/
        
@@ -196,8 +277,8 @@ public:
                 raw_fd_ostream reformatedFile(fileName, error_code, sys::fs::F_None);
                 rewriter.getEditBuffer(i->first).write(reformatedFile);
                 reformatedFile.close();
-                errs() << "\n \n \n \n Output Formatted Buffer: \n";
-                rewriter.getEditBuffer(i->first).write(errs());
+         //       errs() << "\n \n \n \n Output Formatted Buffer: \n";
+         //       rewriter.getEditBuffer(i->first).write(errs());
             }
         }
    }
@@ -210,9 +291,20 @@ public:
 
 
 int main(int argc, const char **argv) {
+	
     // parse the command-line args passed to your code
     cl::OptionCategory PointFreeCategory("Point Free Tool Options");
     CommonOptionsParser op(argc, argv, PointFreeCategory);        
+    
+    if(!TypeAliasOrDefName.size()) {
+		errs() << "Type Alias or TypeDef name not stated, assuming name is: type \n"; 
+		TypeAliasOrDefName = "type";
+	}
+	
+    if(!StructureName.size()) {
+		errs() << "No structure name stated for conversion, exiting without converting \n"; 
+		return -1;
+	}
     
     // create a new Clang Tool instance (a LibTooling environment)
     ClangTool Tool(op.getCompilations(), op.getSourcePathList());

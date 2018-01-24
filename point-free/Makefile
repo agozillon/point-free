@@ -1,4 +1,3 @@
-
 set(LLVM_LINK_COMPONENTS
   Option
   Support
