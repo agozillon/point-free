@@ -44,22 +44,31 @@ private:
 	
 	std::vector<TemplateTypeParmDecl*> ttpdVec;
 		
-	CExpr* TransformToCExpr(Decl* d) {
-		errs() << "Entered Decl Transform \n";
-		d->dump();
+	CExpr* TransformToCExpr(Decl* d, std::string parent = "") {
+	//	errs() << "Entered Decl Transform \n";
+	//	d->dump();
+	//	errs() << "\n \n \n";
 		if (auto* tad = dyn_cast<TypeAliasDecl>(d)) {
+			//errs() << " \n";
+			//tad->dump();
+			//errs() << " \n";
+			//errs() << tad->getName() << "\n";
+			//errs() << tad->getNameAsString() << "\n";
+			//errs() << tad->getIdentifier()->getName() << "\n";
+			
 			return TransformToCExpr(tad->getUnderlyingType().getTypePtr());
 		}	
 
 		// These need to be treated like App's perhaps some of the others do as well.		
 		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
-			crd->dump();
+			//crd->dump();
+			//errs() << crd->getNameAsString() << "\n";
 		}
 				
-		if(auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {			
+		if(auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {	
+			//ctd->dump();
 			for (DeclContext::decl_iterator i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
-			   if (auto* tad = dyn_cast<TypeAliasDecl>(*i)) { 
-				CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
+					CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
 					for(TemplateParameterList::iterator i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
 						if (tCLambdaTop == nullptr) {
 							tCLambdaTop = tCLambdaCurr = new CLambda(); 
@@ -70,18 +79,21 @@ private:
 							tCLambdaCurr->pat = new PVar((*i)->getNameAsString());
 						}
 					}
-			
-				    // NOTE: Checking for a name here may not be the best option
-				    // it should probably only be checked for at the top level.
-					if (tad->getNameAsString() == TypeAliasOrDefName) {
+				
+			  //(*i)->dump();
+					
+			   if (auto* nd = dyn_cast<NamedDecl>(*i)) { 
+
+					// This may have to be moved up to the Visit class if 
+					// I find that ClassTemplateDecl's occur more than once
+					// in a template, in that case it may be best to do a check
+					// to exclude CXXRecord's with the same name as the ClassTemplateDecl.
+					// As otherwise it will go into its own CXXRecord which i don't think is 
+					// correct, at least at the moment. 
+					if (nd->getNameAsString() == TypeAliasOrDefName) {
 						tCLambdaCurr->expr = TransformToCExpr(*i);
 						return tCLambdaTop;
 					}
-				}
-				
-				// This may have to be considered
-				if (auto* crd = dyn_cast<CXXRecordDecl>(*i)) {
-					 /*tCLambdaCurr->expr =*/ TransformToCExpr(*i);
 				}
 			}
 			
@@ -91,30 +103,68 @@ private:
 		return nullptr;
 	}
 	
-	CExpr* TransformToCExpr(const clang::Type* t) {
-		errs() << "Entered Type Transform \n";
+	CExpr* TransformToCExpr(const clang::Type* t, std::string parent = "") {
+	//	errs() << "Entered Type Transform \n";
+		//t->dump();
+		//errs() << "\n \n \n";
+		
 		// could be incorrectly handling this and throwing away 
 		// important information, its of the type something<possiblevalue>::type 
 		if (auto* dnt = dyn_cast<DependentNameType>(t)) {
-			return TransformToCExpr(dnt->getQualifier()->getAsType());
+			// this gets everything before so Foo<T> etc. not neccesarily ideal.
+	//		dnt->getQualifier()->dump();
+			
+			// This retireves the name after ::, so "::" + getName() would
+			// get ::type or so. 
+	//		errs() << "\n" << dnt->getIdentifier()->getName() << "\n";
+			return TransformToCExpr(dnt->getQualifier()->getAsType(), "dnt");
 		} 
 		
 		// a sugared type, things like std::is_polymorphic<T> have a layer of this
 		if (auto* et = dyn_cast<ElaboratedType>(t)) {
-			return TransformToCExpr(et->desugar().getTypePtr());
+			CExpr* temp = TransformToCExpr(et->desugar().getTypePtr());
+			if (et->getQualifier()->getAsNamespace()) {
+				App* tApp = dynamic_cast<App*>(temp);		
+			    Var* tVar = dynamic_cast<Var*>(tApp->exprL);
+			    tVar->name =  et->getQualifier()->getAsNamespace()->getNameAsString() + "::" + tVar->name;
+			}
+			
+			return temp;
 		}
 		
 		// same as above, possible loss of information. 
 		if (auto* tst = dyn_cast<TemplateSpecializationType>(t)) {
-			errs() << "entered specialization type \n";
-			tst->getTemplateName().getAsTemplateDecl();
-			errs() << "invoked getAsTemplateDecl \n";
-			return TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
+			App* curApp, * topApp; 
+			
+			// Will they always require an application, what happens if there is no arguements?
+			// if (curArg > 0) ?
+			curApp = topApp = new App(); 
+			
+		    int curArg = 0;
+			int argCount = tst->getNumArgs() - 1;
+			for (TemplateSpecializationType::iterator i = tst->end() - 1, e = tst->begin() - 1; i != e; i--) {
+			   if (curArg < argCount) {	
+				   curApp->exprL = new App(); 
+				   curApp->exprR = new Var(Prefix, (*i).getAsType().getAsString());
+				   curApp = dynamic_cast<App*>(curApp->exprL);
+			   } else {   				   
+					if (parent == "dnt")
+						curApp->exprL = TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
+					else
+						curApp->exprL = new Var(Prefix, tst->getTemplateName().getAsTemplateDecl()->getName()); 
+					
+					curApp->exprR = new Var(Prefix, (*i).getAsType().getAsString());					
+			   }   
+				
+			   curArg++;
+			}
+								
+			// perhaps I need to go deeper here rather than return?
+			return topApp;	//	return TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
 		}
 		
 		// a template variable like T 
 		if (auto* ttpt = dyn_cast<TemplateTypeParmType>(t)) {
-			
 			return new Var(Prefix, ttpt->getIdentifier()->getName());
 		}
 	
@@ -125,7 +175,6 @@ private:
 			return new Var(Prefix, bt->getNameAsCString(pp));			
 		}
 		
-		errs() << "returning nullptr \n";
 		return nullptr;
 	} 
 	
@@ -178,16 +227,35 @@ public:
     // however I imagine this will pick up templated functions as well
     // as classes. 
     virtual bool VisitClassTemplateDecl(ClassTemplateDecl* ctd) { 
+
 			       	
 		// Can App's be directly replaced with Eval?	       	
 		if (ctd->getNameAsString() == StructureName) { 
-			ctd->dump();		
+			/*
+			errs() << "Start of Test \n";
+			errs() << "\n";
+			errs() << "\n";
+	    	errs() << "\n";
+	    	CExpr* e2 = new CLambda(new PVar("T"), new CLambda(new PVar("T2"), new App(new App(
+	    	new CLambda(new PVar("T3"), new CLambda (new PVar("T4"), new Var(Prefix, "T3"))), new Var(Prefix, "T")), new Var(Prefix, "T2"))));
+			errs() << "\n";
+	    	Print(e2);
+	    	std::cout << "\n";	
+	    	e2 = PointFree(e2);
+	    	Print(e2);
+			std::cout << "\n";	
+	    	errs() << "\n";
+		    errs() << "\n";
+			errs() << "\n";
+			errs() << "End of Test \n";
+			*/
+			//ctd->dump();		
 	    	errs() << "\n";
 	    	CExpr* expr = TransformToCExpr(ctd);
 	    	errs() << "ClassTemplateDecl Converted To CExpr: \n";
 	    	Print(expr); 
-	    	std::cout << "\n";	      
-		    errs() << "\n";
+	    	std::cout << "\n";	
+	    	errs() << "\n";
 	    	errs() << "\n";
 	    	errs() << "CExpr After Point Free Conversion: \n";
 	    	expr = PointFree(expr);
