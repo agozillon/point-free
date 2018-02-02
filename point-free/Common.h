@@ -104,51 +104,13 @@ public:
 CExpr* TransformRecursive(CExpr* expr, std::vector<std::string> names);
 CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* expr);
 
-void AlphaPat(Pattern* pat, std::map<std::string, std::string>& env) {
-	if (PVar* pVar = dynamic_cast<PVar*>(pat)) {
-		std::string newName = "$" + std::to_string((int)env.size());
-		env.insert(std::pair<std::string, std::string>(pVar->name, newName));
-		pVar->name = newName;
-	}
+std::string MapSize(std::map<std::string, std::stack<std::string>> env) {
+	int size = 0;
 	
-	if (PTuple* pTup = dynamic_cast<PTuple*>(pat)) {
-		AlphaPat(pTup->pat1, env);
-		AlphaPat(pTup->pat2, env);
-	}
-
-	if (PCons* pCons = dynamic_cast<PCons*>(pat)) {
-		AlphaPat(pCons->pat1, env);
-		AlphaPat(pCons->pat2, env);
-	}
-}
-
-void Alpha(CExpr* expr, std::map<std::string, std::string>& env) {
+	for (auto it = env.begin(); it != env.end(); ++it)
+		size += it->second.size();
 	
-	if (Var* var = dynamic_cast<Var*>(expr)) {
-		auto it = env.find(var->name);
-		if (it != env.end())
-			var->name = it->second;
-	}
-
-	if (App* app = dynamic_cast<App*>(expr)) {
-		Alpha(app->exprL, env);
-		Alpha(app->exprR, env);
-	}
-
-	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
-		AlphaPat(lambda->pat, env);
-		Alpha(lambda->expr, env);
-	}
-
-	//if (Let* let = dynamic_cast<Let*>(expr)) {
-	//	assert(false);
-	//}
-}
-
-void AlphaRename(CExpr* expr) {
-	// Key = Old name, Value = new $1 identifier 
-	std::map<std::string, std::string> env;
-	Alpha(expr, env);
+	return std::to_string(size);
 }
 
 std::string charGen(int index) {
@@ -177,6 +139,106 @@ std::string fresh(std::vector<std::string> strList) {
 	}
 		
 	return cGen;
+}
+
+std::vector<std::string> AlphaPat(Pattern* pat, std::map<std::string, std::stack<std::string>>& env) {
+	
+	std::vector<std::string> nameList, tempList;
+
+	/*alphaPat(PVar v) = do
+	  fm <-get 
+	  let v' = "$" ++ show (M.size fm) 
+	  put $ M.insert v v' fm 
+	  return $ PVar v' */
+	if (PVar* pVar = dynamic_cast<PVar*>(pat)) {
+		std::string newName = "$" + MapSize(env);
+
+		// This has to be changed, we won't always be inserting a new element now.
+		// And the element is a stack.
+		auto it = env.find(pVar->name);
+		if (it != env.end()) {
+			it->second.push(newName);
+		} else {
+			std::stack<std::string> newStack; 
+			newStack.push(newName);
+			env.insert(std::pair<std::string, std::stack<std::string>>(pVar->name, newStack));
+		}
+		
+		nameList.push_back(pVar->name);
+		pVar->name = newName;
+	}
+	
+	// alphaPat(PTuple p1 p2) = liftM2 PTuple(alphaPat p1) (alphaPat p2)
+	if (PTuple* pTup = dynamic_cast<PTuple*>(pat)) {
+		tempList = AlphaPat(pTup->pat1, env);
+		
+		for (size_t i = 0; i < tempList.size(); i++) {
+			nameList.push_back(tempList[i]);
+		}
+
+		tempList = AlphaPat(pTup->pat2, env);
+		
+		for (size_t i = 0; i < tempList.size(); i++) {
+			nameList.push_back(tempList[i]);
+		}
+	}
+
+	// alphaPat(PCons p1 p2) = liftM2 PCons(alphaPat p1) (alphaPat p2)
+	if (PCons* pCons = dynamic_cast<PCons*>(pat)) {
+		tempList = AlphaPat(pCons->pat1, env);
+		
+		for (size_t i = 0; i < tempList.size(); i++) {
+			nameList.push_back(tempList[i]);
+		}
+		
+		tempList = AlphaPat(pCons->pat2, env);
+
+		for (size_t i = 0; i < tempList.size(); i++) {
+			nameList.push_back(tempList[i]);
+		}
+	}
+
+	return nameList;
+}
+
+void Alpha(CExpr* expr, std::map<std::string, std::stack<std::string>>& env) {
+	// alpha(Var f v) = do fm <-get; return $ Var f $ maybe v id(M.lookup v fm)
+	if (Var* var = dynamic_cast<Var*>(expr)) {
+		auto it = env.find(var->name);
+		if (it != env.end())
+			var->name = it->second.top();
+	}
+
+	// alpha(App e1 e2) = liftM2 App(alpha e1) (alpha e2)
+	if (App* app = dynamic_cast<App*>(expr)) {
+		Alpha(app->exprL, env);
+		Alpha(app->exprR, env);
+	}
+
+	// alpha(Lambda v e') = inEnv $ liftM2 Lambda (alphaPat v) (alpha e')
+	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
+		std::vector<std::string> popList = AlphaPat(lambda->pat, env);
+		Alpha(lambda->expr, env);
+
+		for (size_t i = 0; i < popList.size(); ++i) {
+			auto it = env.find(popList[i]);
+			if (it != env.end()) {
+				it->second.pop();
+			}
+		}
+
+	}
+
+	// alpha(Let _ _) = assert False bt, everything should be broken into a lambda at this point 
+	//if (Let* let = dynamic_cast<Let*>(expr)) {
+	//	assert(false);
+	//}
+}
+
+void AlphaRename(CExpr* expr) {
+	// Key = Old name, Value = new $1 identifier 
+	std::map<std::string, std::stack<std::string>> env;
+	Alpha(expr, env);
 }
 
 void gatherNames(CExpr* expr, std::vector<std::string>& names) {
@@ -267,24 +329,17 @@ bool isFreeIn(std::string name, CExpr* expr) {
 }
 
 CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* expr) {
-	std::cout << "entered removevariable \n";
 	if (Var* var = dynamic_cast<Var*>(expr)) {
-		std::cout << "entered Var \n";
 		if (name == var->name) {
-			std::cout << "entered id \n";
-		
 			delete var;
 			return new Var(Prefix, "id");
-		} else {
-			std::cout << "entered const \n";
-					
+		} else {					
 			return new App(new Var(Prefix, "const"), var);
 		}
 
 	}
 
 	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
-		std::cout << "entered Lambda \n";
 		if (!occursInPattern(name, lambda->pat)) {
 			return RemoveVariable(name, names, TransformRecursive(expr, names));
 		} else {
@@ -347,7 +402,6 @@ CExpr* TransformRecursive(CExpr* expr, std::vector<std::string> names) {
 
 	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
 		if (PVar* pVar = dynamic_cast<PVar*>(lambda->pat)) {
-			errs() << "Transform Recursive Lambda \n";
 			return TransformRecursive(RemoveVariable(pVar->name, names, lambda->expr), names);
 		}
 
