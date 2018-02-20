@@ -44,7 +44,7 @@ private:
 	
 	std::vector<TemplateTypeParmDecl*> ttpdVec;
 		
-	CExpr* TransformToCExpr(Expr* e, std::string parent = "") {
+	CExpr* TransformToCExpr(Expr* e) {
 		
 		// this is an interesting case and may not be correct!  
 		if (auto* dsdre = dyn_cast<DependentScopeDeclRefExpr>(e)) {		
@@ -64,60 +64,77 @@ private:
 		return nullptr;	
 	}			
 	
-	CExpr* TransformToCExpr(Decl* d, std::string parent = "") {
+	CExpr* TransformToCExpr(Decl* d) {
 		errs() << "Entered Decl Transform \n";
 		d->dump();
-		errs() << "\n";
+		errs() << "\n \n \n";
 
 		if (auto* tad = dyn_cast<TypeAliasDecl>(d)) {	
 			return TransformToCExpr(tad->getUnderlyingType().getTypePtr());
 		}	
 
+		if (auto* td = dyn_cast<TypedefDecl>(d)) {
+			return TransformToCExpr(td->getUnderlyingType().getTypePtr());		
+		}
+	
 		if (auto* fd = dyn_cast<FieldDecl>(d)) { 
 		  if(fd->hasInClassInitializer()) {
 			  return TransformToCExpr(fd->getInClassInitializer()); 			
 		   }
 		}
 			
-		// These need to be treated like App's perhaps some of the others do as well.		
+		// This is actually handled in the ClassTemplateDecl section (getTemplatedDecl
+		// retrieves it) so if this ever gets triggered then perhaps I should move the 
+		// section from ClassTemplateDecl to here
 		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
-			
-			return new Var(Prefix, "IS IT ME THATS A PROBLEM");
-			 
-			//crd->dump();
-			//errs() << crd->getNameAsString() << "\n";
+			errs() << "Entered CXXRecordDecl, probably shouldn't occur \n";		
 		}
 				
 		if(auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {	
-			for (DeclContext::decl_iterator i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
-					CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
-					for(TemplateParameterList::iterator i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
-						if (tCLambdaTop == nullptr) {
-							tCLambdaTop = tCLambdaCurr = new CLambda(); 
-							tCLambdaCurr->pat = new PVar((*i)->getNameAsString()); 
-						} else {
-							tCLambdaCurr->expr = new CLambda();
-							tCLambdaCurr = dynamic_cast<CLambda*>(tCLambdaCurr->expr); 	
-							tCLambdaCurr->pat = new PVar((*i)->getNameAsString());
-						}
+			// tbis goes through all the base classes and looks for integral_constant, then checks if it has a type_trait
+			// as an arguement. This should find metafunctions like is_polymorphic. 
+			for (auto i = ctd->getTemplatedDecl()->bases_begin(), e = ctd->getTemplatedDecl()->bases_end(); i != e; i++) {
+				if (auto* tst = dyn_cast<TemplateSpecializationType>((*i).getType())) {
+					// could also check for the integral_constant aspect of it 
+					// in conjunction with the type trait expr to flag it as
+					// a std type trait. 					 
+					for (auto i2 = tst->begin(), e2 = tst->end(); i2 != e2; ++i2) {
+						if ((*i2).getKind() == TemplateArgument::ArgKind::Expression) {
+							if (auto* tte = dyn_cast<TypeTraitExpr>((*i2).getAsExpr())) {
+								std::string traitName = ctd->getNameAsString() += "_t";
+															
+								// I don't think value comes down the same path 	
+								// however i think they should be handled the same way
+								// this may require some thought. Perhaps its possible to move
+								// this section into the TemplateSpecializationType area.
+								// if (TypeAliasOrDefName == "value")
+								//	traitName += "_v";									
+								
+								TypeAliasOrDefName = "";
+							 
+								return new Var(Prefix, traitName);
+							}								
+						}																		
+					}		
+				}					
+			}
+												
+			for (auto i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
+				CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
+				for(auto i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
+					if (tCLambdaTop == nullptr) {
+						tCLambdaTop = tCLambdaCurr = new CLambda(); 
+						tCLambdaCurr->pat = new PVar((*i)->getNameAsString()); 
+					} else {
+						tCLambdaCurr->expr = new CLambda();
+						tCLambdaCurr = dynamic_cast<CLambda*>(tCLambdaCurr->expr); 	
+						tCLambdaCurr->pat = new PVar((*i)->getNameAsString());
 					}
-				
-			   // we can check if its a CXX record and block it, however what happens if 
-			   // there is more than one other using in the class and its not the one 
-			   // we are looking for? I think we may have to check for the correct name of
-			   // the parent.
+				}
+
 			   if (auto* nd = dyn_cast<NamedDecl>(*i)) {
-					errs() << TypeAliasOrDefName << "\n";
-					 
-					nd->dump();
-					 
-					// This may have to be moved up to the Visit class if 
-					// I find that ClassTemplateDecl's occur more than once
-					// in a template, in that case it may be best to do a check
-					// to exclude CXXRecord's with the same name as the ClassTemplateDecl.
-					// As otherwise it will go into its own CXXRecord which i don't think is 
-					// correct, at least at the moment. 
 					if (nd->getNameAsString() == TypeAliasOrDefName) {
+						TypeAliasOrDefName = "";
 						tCLambdaCurr->expr = TransformToCExpr(*i);
 						return tCLambdaTop;
 					}
@@ -128,10 +145,10 @@ private:
 		return nullptr;
 	}
 	
-	CExpr* TransformToCExpr(const clang::Type* t, std::string parent = "") {
+	CExpr* TransformToCExpr(const clang::Type* t) {
 		errs() << "Entered Type Transform \n";
-		t->dump();
-		errs() << "\n";
+	    t->dump();
+		errs() << "\n \n \n";
 				
 		// could be incorrectly handling this and throwing away 
 		// important information, its of the type something<possiblevalue>::type 
@@ -142,8 +159,7 @@ private:
 			// we can tell which member in the template class is getting invoked
 			// so we can search for it specifically and ignore the rest.  
 			TypeAliasOrDefName = dnt->getIdentifier()->getName();
-			
-			return TransformToCExpr(dnt->getQualifier()->getAsType(), "dnt");
+			return TransformToCExpr(dnt->getQualifier()->getAsType());
 		} 
 		
 		// a sugared type, things like std::is_polymorphic<T> have a layer of this
@@ -169,22 +185,27 @@ private:
 			// Will they always require an application, what happens if there is no arguements?
 			// if (curArg > 0) ?
 			curApp = topApp = new App(); 
-			
-		    int curArg = 0;
-			int argCount = tst->getNumArgs() - 1;
-			for (TemplateSpecializationType::iterator i = tst->end() - 1, e = tst->begin() - 1; i != e; i--) {
-			   if (curArg < argCount) {	
+
+		    int curArg = 0, argCount = tst->getNumArgs() - 1;
+			std::string name;	
+			for (auto i = tst->end() - 1, e = tst->begin() - 1; i != e; i--) {
+				if ((*i).getKind() == TemplateArgument::ArgKind::Type)
+					name = (*i).getAsType().getAsString();
+					
+				if ((*i).getKind() == TemplateArgument::ArgKind::Expression)
+					name = (*i).getAsExpr()->getType().getAsString();
+												
+			   if (curArg < argCount) {		   		
 				   curApp->exprL = new App(); 
-				   curApp->exprR = new Var(Prefix, (*i).getAsType().getAsString());
+				   curApp->exprR = new Var(Prefix, name);
 				   curApp = dynamic_cast<App*>(curApp->exprL);
 			   } else {   				   
-					if (parent == "dnt")
+					if (TypeAliasOrDefName != "")
 						curApp->exprL = TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
 					else						
 						curApp->exprL = new Var(Prefix, tst->getTemplateName().getAsTemplateDecl()->getName()); 
-					
-					
-					curApp->exprR = new Var(Prefix, (*i).getAsType().getAsString());					
+						
+					curApp->exprR = new Var(Prefix, name);							
 			   }   
 				
 			   curArg++;
@@ -261,29 +282,9 @@ public:
 		
 		// Can App's be directly replaced with Eval?	       	
 		if (ctd->getNameAsString() == StructureName) { 	
-			ctd->dump();
-			
-			CExpr* expr;
-			for (DeclContext::decl_iterator i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
-					CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
-					for(TemplateParameterList::iterator i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
-						if (tCLambdaTop == nullptr) {
-							tCLambdaTop = tCLambdaCurr = new CLambda(); 
-							tCLambdaCurr->pat = new PVar((*i)->getNameAsString()); 
-						} else {
-							tCLambdaCurr->expr = new CLambda();
-							tCLambdaCurr = dynamic_cast<CLambda*>(tCLambdaCurr->expr); 	
-							tCLambdaCurr->pat = new PVar((*i)->getNameAsString());
-						}
-					}
-									
-			   if (auto* nd = dyn_cast<NamedDecl>(*i)) { 
-					if (nd->getNameAsString() == TypeAliasOrDefName) {
-						tCLambdaCurr->expr = TransformToCExpr(*i);
-						expr = tCLambdaTop;
-					}
-				}
-			}
+				
+			CExpr* expr = TransformToCExpr(ctd);
+				
 				
 			/*
 			errs() << "Start of Test \n";
@@ -389,7 +390,7 @@ public:
 
         tooling::applyAllReplacements(FormatChanges, rewriter);
 
-        for (Rewriter::buffer_iterator i = rewriter.buffer_begin(), e = rewriter.buffer_end(); i != e; ++i) {
+        for (auto i = rewriter.buffer_begin(), e = rewriter.buffer_end(); i != e; ++i) {
             auto entry = rewriter.getSourceMgr().getFileEntryForID(i->first); 
             if(entry->getName() == fileName) {
                 std::error_code error_code;
