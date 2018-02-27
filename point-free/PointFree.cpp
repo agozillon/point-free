@@ -189,24 +189,28 @@ private:
 		    int curArg = 0, argCount = tst->getNumArgs() - 1;
 			std::string name;	
 			for (auto i = tst->end() - 1, e = tst->begin() - 1; i != e; i--) {
-				if ((*i).getKind() == TemplateArgument::ArgKind::Type)
-					name = (*i).getAsType().getAsString();
-					
-				if ((*i).getKind() == TemplateArgument::ArgKind::Expression)
-					name = (*i).getAsExpr()->getType().getAsString();
-												
-			   if (curArg < argCount) {		   		
-				   curApp->exprL = new App(); 
-				   curApp->exprR = new Var(Prefix, name);
-				   curApp = dynamic_cast<App*>(curApp->exprL);
-			   } else {   				   
-					if (TypeAliasOrDefName != "")
+				CExpr* expr;
+				
+				if ((*i).getKind() == TemplateArgument::ArgKind::Type) {
+					expr = TransformToCExpr((*i).getAsType().getTypePtr());					
+				}
+				
+				if ((*i).getKind() == TemplateArgument::ArgKind::Expression) {
+					expr = TransformToCExpr((*i).getAsExpr());
+			    }
+			    
+			    if (curArg < argCount) {		   		
+				    curApp->exprL = new App(); 
+				    curApp->exprR = expr; 		   
+				    curApp = dynamic_cast<App*>(curApp->exprL);
+			    } else {   				   
+				 	if (TypeAliasOrDefName != "")
 						curApp->exprL = TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
 					else						
 						curApp->exprL = new Var(Prefix, tst->getTemplateName().getAsTemplateDecl()->getName()); 
 						
-					curApp->exprR = new Var(Prefix, name);							
-			   }   
+					curApp->exprR = expr;							
+			    }   
 				
 			   curArg++;
 			}
@@ -284,26 +288,27 @@ public:
 		if (ctd->getNameAsString() == StructureName) { 	
 				
 			CExpr* expr = TransformToCExpr(ctd);
-				
-				
-			/*
+	
 			errs() << "Start of Test \n";
 			errs() << "\n";
 			errs() << "\n";
 	    	errs() << "\n";
-	    	CExpr* e2 = new CLambda(new PVar("T"), new CLambda(new PVar("T2"), new App(new App(
-	    	new CLambda(new PVar("T3"), new CLambda (new PVar("T4"), new Var(Prefix, "T3"))), new Var(Prefix, "T")), new Var(Prefix, "T2"))));
+	    					
+			// I believe this is the correct output for Grey. 
+			//CExpr* e2 = new CLambda(new PVar("T"), new App(new Var(Prefix, "is_polymorphic_t"), new App(new Var(Prefix, "Foo"), new Var(Prefix, "T"))));
+		/*				 
 			errs() << "\n";
-	    	Print(e2);
+	    	Print(e);
 	    	std::cout << "\n";	
-	    	e2 = PointFree(e2);
-	    	Print(e2);
+	    	e = PointFree(e);
+	    	Print(e);
 			std::cout << "\n";	
 	    	errs() << "\n";
 		    errs() << "\n";
 			errs() << "\n";
 			errs() << "End of Test \n";
-			*/
+		*/	
+			
 	    	errs() << "ClassTemplateDecl Converted To CExpr: \n";
 	    	Print(expr); 
 	    	std::cout << "\n";	
@@ -312,7 +317,8 @@ public:
 	    	errs() << "CExpr After Point Free Conversion: \n";
 	    	expr = PointFree(expr);
 			Print(expr);
-			std::cout << "\n";	   
+			std::cout << "\n";
+			   
         }
              
         return true;
