@@ -45,21 +45,43 @@ private:
 	std::vector<TemplateTypeParmDecl*> ttpdVec;
 		
 	CExpr* TransformToCExpr(Expr* e) {
-		
+		errs() << "Entered Expr Transform \n";
+		e->dump();
+		errs() << "\n \n \n";
+						
 		// this is an interesting case and may not be correct!  
-		if (auto* dsdre = dyn_cast<DependentScopeDeclRefExpr>(e)) {		
+		if (auto* dsdre = dyn_cast<DependentScopeDeclRefExpr>(e)) {
+			errs() << dsdre->getDeclName().getAsString() << "\n";		
+			TypeAliasOrDefName = dsdre->getDeclName().getAsString();
+			
 			CExpr* temp = TransformToCExpr(dsdre->getQualifier()->getAsType());
 			//dsdre->getQualifier()->dump();  // gets the :: left hand component 
 			//dsdre->getDeclName().dump();    // gets the :: right hand component
 			
-			if (dsdre->getDeclName()) {
-				App* tApp = dynamic_cast<App*>(temp);		
-			    Var* tVar = dynamic_cast<Var*>(tApp->exprL);
-			    tVar->name = tVar->name + "_v"; // assuming its a value when it gets here
-			} 			
+			//if (dsdre->getDeclName()) {
+			//	App* tApp = dynamic_cast<App*>(temp);		
+			//   Var* tVar = dynamic_cast<Var*>(tApp->exprL);
+			//  tVar->name = tVar->name + "_v"; // assuming its a value when it gets here
+			//} 			
 			
 			return temp;
 		}	
+		
+		if (auto* cble = dyn_cast<CXXBoolLiteralExpr>(e)) {
+			if (cble->getValue())
+				return new Var(Prefix, "true"); 
+			else 
+				return new Var(Prefix, "false");
+		}
+		
+		if (auto* il = dyn_cast<IntegerLiteral>(e)) {			 
+			return new Var(Prefix, il->getValue().toString(10, true));					
+		}
+		
+		if (auto* cl = dyn_cast<CharacterLiteral>(e)) {
+			std::string s(1, (char)cl->getValue());
+			return new Var(Prefix, s);	
+		}
 		
 		return nullptr;	
 	}			
@@ -77,21 +99,43 @@ private:
 			return TransformToCExpr(td->getUnderlyingType().getTypePtr());		
 		}
 	
+		if (auto* vd = dyn_cast<VarDecl>(d)) {
+		//	vd->getDeclName().dump();    // gets the :: right hand component
+		//	errs() << vd->getIdentifier()->getNameStart() << "\n";
+		//	errs() << vd->getName() << "\n";
+		//	errs() << vd->hasDefinition() << "\n";
+		//	if(vd->getEvaluatedValue())
+		//		errs() << "there is an evaluated value \n";
+		//	else
+		//		errs() << "there is no evaluated value \n";			
+			
+			if (vd->hasInit())		 
+				return TransformToCExpr(vd->getInit());
+		}
+		
 		if (auto* fd = dyn_cast<FieldDecl>(d)) { 
-		  if(fd->hasInClassInitializer()) {
+		  if (fd->hasInClassInitializer())
 			  return TransformToCExpr(fd->getInClassInitializer()); 			
-		   }
 		}
 			
-		// This is actually handled in the ClassTemplateDecl section (getTemplatedDecl
-		// retrieves it) so if this ever gets triggered then perhaps I should move the 
-		// section from ClassTemplateDecl to here
 		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
-			errs() << "Entered CXXRecordDecl, probably shouldn't occur \n";		
+			if (TypeAliasOrDefName == "") {
+				return new Var(Prefix, crd->getNameAsString()); 
+			}
+			
+			/*
+			for (auto i =crd->decls_begin(), e = crd->decls_end(); i != e; i++) {				
+				if (auto* nd = dyn_cast<NamedDecl>(*i)) {
+					if (nd->getNameAsString() == TypeAliasOrDefName) {
+						TypeAliasOrDefName = "";
+						return TransformToCExpr(*i);	
+					}
+				}	
+			}*/	
 		}
 				
-		if(auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {	
-			// tbis goes through all the base classes and looks for integral_constant, then checks if it has a type_trait
+		if (auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {	
+			// this goes through all the base classes and looks for integral_constant, then checks if it has a type_trait
 			// as an arguement. This should find metafunctions like is_polymorphic. 
 			for (auto i = ctd->getTemplatedDecl()->bases_begin(), e = ctd->getTemplatedDecl()->bases_end(); i != e; i++) {
 				if (auto* tst = dyn_cast<TemplateSpecializationType>((*i).getType())) {
@@ -107,11 +151,10 @@ private:
 								// however i think they should be handled the same way
 								// this may require some thought. Perhaps its possible to move
 								// this section into the TemplateSpecializationType area.
-								// if (TypeAliasOrDefName == "value")
-								//	traitName += "_v";									
+								if (TypeAliasOrDefName == "value")
+									traitName += "_v";									
 								
 								TypeAliasOrDefName = "";
-							 
 								return new Var(Prefix, traitName);
 							}								
 						}																		
@@ -149,7 +192,11 @@ private:
 		errs() << "Entered Type Transform \n";
 	    t->dump();
 		errs() << "\n \n \n";
-				
+						
+		if (auto* tt = dyn_cast<TypedefType>(t)) {
+			return TransformToCExpr(tt->getDecl());
+		}
+		
 		// could be incorrectly handling this and throwing away 
 		// important information, its of the type something<possiblevalue>::type 
 		if (auto* dnt = dyn_cast<DependentNameType>(t)) {
@@ -162,22 +209,16 @@ private:
 			return TransformToCExpr(dnt->getQualifier()->getAsType());
 		} 
 		
+
 		// a sugared type, things like std::is_polymorphic<T> have a layer of this
 		if (auto* et = dyn_cast<ElaboratedType>(t)) {
 			return TransformToCExpr(et->desugar().getTypePtr());
-	/*
-		    // A snippet of code that at least in this case adds the namespace onto the front of the 
-		    // variable name. So is_polymorphic -> std::is_polymorphic, if its used however namespaces 
-		    // would have to be taken into consideration elsewhere where they may not be easily accessible.
-		    // For example when dealing with DependentScopeDeclRefExpr   
-			if (et->getQualifier()->getAsNamespace()) {
-				App* tApp = dynamic_cast<App*>(temp);		
-			    Var* tVar = dynamic_cast<Var*>(tApp->exprL);
-			    tVar->name =  et->getQualifier()->getAsNamespace()->getNameAsString() + "::" + tVar->name;
-			}
-	*/	
 		}
-		
+
+		if (auto* rt = dyn_cast<RecordType>(t)) {
+			return TransformToCExpr(rt->getDecl());	
+		}
+				
 		// same as above, possible loss of information. 
 		if (auto* tst = dyn_cast<TemplateSpecializationType>(t)) {
 			App* curApp, * topApp; 
@@ -224,6 +265,8 @@ private:
 			return new Var(Prefix, ttpt->getIdentifier()->getName());
 		}
 	
+
+		
 		// hard-coded type like Int, float, string
 		if (auto* bt = dyn_cast<BuiltinType>(t)) {
 			PrintingPolicy pp = PrintingPolicy(LangOptions());
@@ -293,7 +336,8 @@ public:
 			errs() << "\n";
 			errs() << "\n";
 	    	errs() << "\n";
-	    					
+	    	 		
+   			 		
 			// I believe this is the correct output for Grey. 
 			//CExpr* e2 = new CLambda(new PVar("T"), new App(new Var(Prefix, "is_polymorphic_t"), new App(new Var(Prefix, "Foo"), new Var(Prefix, "T"))));
 		/*				 
