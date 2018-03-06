@@ -18,6 +18,9 @@
 #include "Common.h"
 
 #include <vector>
+#include <utility>
+//#include <functional>
+#include <stack>
 #include <string>
 #include <iostream>
 
@@ -37,13 +40,12 @@ static cl::opt<std::string> TypeAliasOrDefName(
 	cl::desc("The name of the using or type alias in the class you wish to convert"));
 	
 Rewriter rewriter;
-
+std::stack<std::pair<std::string, std::string>> QualifierNameStack;
+	
 class PointFreeVisitor : public RecursiveASTVisitor<PointFreeVisitor> {
 private:
     ASTContext *astContext; // used for getting additional AST info
-	
-	std::vector<TemplateTypeParmDecl*> ttpdVec;
-		
+			
 	CExpr* TransformToCExpr(Expr* e) {
 		errs() << "Entered Expr Transform \n";
 		e->dump();
@@ -51,18 +53,12 @@ private:
 						
 		// this is an interesting case and may not be correct!  
 		if (auto* dsdre = dyn_cast<DependentScopeDeclRefExpr>(e)) {
-			errs() << dsdre->getDeclName().getAsString() << "\n";		
-			TypeAliasOrDefName = dsdre->getDeclName().getAsString();
-			
+			if (auto* tst = dyn_cast<TemplateSpecializationType>(dsdre->getQualifier()->getAsType())) 
+				QualifierNameStack.push(std::make_pair(tst->getTemplateName().getAsTemplateDecl()->getName(), dsdre->getDeclName().getAsString()));	
+			else
+				errs() << "A non-TemplateSpecializationType passed through \n";
+						 
 			CExpr* temp = TransformToCExpr(dsdre->getQualifier()->getAsType());
-			//dsdre->getQualifier()->dump();  // gets the :: left hand component 
-			//dsdre->getDeclName().dump();    // gets the :: right hand component
-			
-			//if (dsdre->getDeclName()) {
-			//	App* tApp = dynamic_cast<App*>(temp);		
-			//   Var* tVar = dynamic_cast<Var*>(tApp->exprL);
-			//  tVar->name = tVar->name + "_v"; // assuming its a value when it gets here
-			//} 			
 			
 			return temp;
 		}	
@@ -95,6 +91,31 @@ private:
 			return TransformToCExpr(tad->getUnderlyingType().getTypePtr());
 		}	
 
+		if (auto* tatd = dyn_cast<TypeAliasTemplateDecl>(d)) {		
+			if (isFromTypeTraits(tatd->getNameAsString())) {			
+				std::string traitName = tatd->getNameAsString();
+				
+				if (traitName == std::get<0>(QualifierNameStack.top()) && std::get<1>(QualifierNameStack.top()) == "value") {
+					traitName += "::v";				
+					
+					if (QualifierNameStack.size() > 0)
+						QualifierNameStack.pop();
+				}
+								
+				if (traitName == std::get<0>(QualifierNameStack.top()) && std::get<1>(QualifierNameStack.top()) == "type") {
+					traitName += "::t";			
+
+					if (QualifierNameStack.size() > 0)
+						QualifierNameStack.pop();
+				}
+							
+				return new Var(Prefix, traitName);									
+			}
+								 
+			return TransformToCExpr(tatd->getTemplatedDecl());
+		}
+		
+		
 		if (auto* td = dyn_cast<TypedefDecl>(d)) {
 			return TransformToCExpr(td->getUnderlyingType().getTypePtr());		
 		}
@@ -119,7 +140,9 @@ private:
 		}
 			
 		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
-			if (TypeAliasOrDefName == "") {
+			errs() << "this CXXRecordDecl node could be an problem \n";
+			if (std::get<0>(QualifierNameStack.top()) == ""
+			 && std::get<1>(QualifierNameStack.top()) == "") {
 				return new Var(Prefix, crd->getNameAsString()); 
 			}
 			
@@ -135,33 +158,29 @@ private:
 		}
 				
 		if (auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {	
-			// this goes through all the base classes and looks for integral_constant, then checks if it has a type_trait
-			// as an arguement. This should find metafunctions like is_polymorphic. 
-			for (auto i = ctd->getTemplatedDecl()->bases_begin(), e = ctd->getTemplatedDecl()->bases_end(); i != e; i++) {
-				if (auto* tst = dyn_cast<TemplateSpecializationType>((*i).getType())) {
-					// could also check for the integral_constant aspect of it 
-					// in conjunction with the type trait expr to flag it as
-					// a std type trait. 					 
-					for (auto i2 = tst->begin(), e2 = tst->end(); i2 != e2; ++i2) {
-						if ((*i2).getKind() == TemplateArgument::ArgKind::Expression) {
-							if (auto* tte = dyn_cast<TypeTraitExpr>((*i2).getAsExpr())) {
-								std::string traitName = ctd->getNameAsString() += "_t";
-															
-								// I don't think value comes down the same path 	
-								// however i think they should be handled the same way
-								// this may require some thought. Perhaps its possible to move
-								// this section into the TemplateSpecializationType area.
-								if (TypeAliasOrDefName == "value")
-									traitName += "_v";									
+			
+			if(isFromTypeTraits(ctd->getNameAsString())) {
+				std::string traitName = ctd->getNameAsString();
+				
+				if (traitName == std::get<0>(QualifierNameStack.top()) 
+				&& std::get<1>(QualifierNameStack.top()) == "value") {
+					traitName += "::v";				
+					
+					if (QualifierNameStack.size() > 0)
+						QualifierNameStack.pop();
+				}
 								
-								TypeAliasOrDefName = "";
-								return new Var(Prefix, traitName);
-							}								
-						}																		
-					}		
-				}					
+				if (traitName == std::get<0>(QualifierNameStack.top())
+				 && std::get<1>(QualifierNameStack.top()) == "type") {
+					traitName += "::t";			
+
+					if (QualifierNameStack.size() > 0)
+						QualifierNameStack.pop();
+				}
+							
+				return new Var(Prefix, traitName);									
 			}
-												
+											
 			for (auto i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
 				CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
 				for(auto i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
@@ -176,8 +195,12 @@ private:
 				}
 
 			   if (auto* nd = dyn_cast<NamedDecl>(*i)) {
-					if (nd->getNameAsString() == TypeAliasOrDefName) {
-						TypeAliasOrDefName = "";
+					if (ctd->getNameAsString() == std::get<0>(QualifierNameStack.top())
+					 && nd->getNameAsString() == std::get<1>(QualifierNameStack.top())) {
+					
+						if (QualifierNameStack.size() > 0)
+							QualifierNameStack.pop();
+										
 						tCLambdaCurr->expr = TransformToCExpr(*i);
 						return tCLambdaTop;
 					}
@@ -200,12 +223,15 @@ private:
 		// could be incorrectly handling this and throwing away 
 		// important information, its of the type something<possiblevalue>::type 
 		if (auto* dnt = dyn_cast<DependentNameType>(t)) {
-			
 			// This retireves the name after ::, so "::" + getName() would
 			// get ::type or so. Setting the variable in this case is so that 
 			// we can tell which member in the template class is getting invoked
 			// so we can search for it specifically and ignore the rest.  
-			TypeAliasOrDefName = dnt->getIdentifier()->getName();
+			if (auto* tst = dyn_cast<TemplateSpecializationType>(dnt->getQualifier()->getAsType())) 
+				QualifierNameStack.push(std::make_pair(tst->getTemplateName().getAsTemplateDecl()->getName(), dnt->getIdentifier()->getName()));	
+			else
+				errs() << "A non-TemplateSpecializationType passed through \n";
+
 			return TransformToCExpr(dnt->getQualifier()->getAsType());
 		} 
 		
@@ -240,16 +266,20 @@ private:
 					expr = TransformToCExpr((*i).getAsExpr());
 			    }
 			    
+	
 			    if (curArg < argCount) {		   		
 				    curApp->exprL = new App(); 
 				    curApp->exprR = expr; 		   
 				    curApp = dynamic_cast<App*>(curApp->exprL);
 			    } else {   				   
-				 	if (TypeAliasOrDefName != "")
+				 	if (tst->getTemplateName().getAsTemplateDecl()->getNameAsString() == std::get<0>(QualifierNameStack.top()) 
+						&& std::get<1>(QualifierNameStack.top()) != "") {
+						errs() << "1: " << std::get<1>(QualifierNameStack.top()) << "\n";
 						curApp->exprL = TransformToCExpr(tst->getTemplateName().getAsTemplateDecl());
-					else						
+					} else {						
+						errs() << "2: " << std::get<1>(QualifierNameStack.top()) << "  " << tst->getTemplateName().getAsTemplateDecl()->getName() << "\n";
 						curApp->exprL = new Var(Prefix, tst->getTemplateName().getAsTemplateDecl()->getName()); 
-						
+					}
 					curApp->exprR = expr;							
 			    }   
 				
@@ -465,16 +495,22 @@ int main(int argc, const char **argv) {
     // parse the command-line args passed to your code
     cl::OptionCategory PointFreeCategory("Point Free Tool Options");
     CommonOptionsParser op(argc, argv, PointFreeCategory);        
-    
-    if(!TypeAliasOrDefName.size()) {
-		errs() << "Type Alias or TypeDef name not stated, assuming name is: type \n"; 
-		TypeAliasOrDefName = "type";
-	}
-	
+
     if(!StructureName.size()) {
 		errs() << "No structure name stated for conversion, exiting without converting \n"; 
 		return -1;
 	}
+	    
+    QualifierNameStack.push(std::make_pair(std::string(""), std::string("")));
+    if(!TypeAliasOrDefName.size()) {
+		errs() << "Type Alias or TypeDef name not stated, assuming name is: type \n"; 
+		QualifierNameStack.push(std::make_pair(std::string(StructureName), std::string("type")));
+	} else {
+		QualifierNameStack.push(std::make_pair(std::string(StructureName), std::string(TypeAliasOrDefName)));
+	}
+
+	errs() << "\n \n STACK SIZE:" << QualifierNameStack.size() << "\n";
+
     
     // create a new Clang Tool instance (a LibTooling environment)
     ClangTool Tool(op.getCompilations(), op.getSourcePathList());
