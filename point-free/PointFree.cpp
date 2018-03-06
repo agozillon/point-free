@@ -45,6 +45,23 @@ std::stack<std::pair<std::string, std::string>> QualifierNameStack;
 class PointFreeVisitor : public RecursiveASTVisitor<PointFreeVisitor> {
 private:
     ASTContext *astContext; // used for getting additional AST info
+	
+	CExpr* TransformToCExpr(NestedNameSpecifier* nns) {		
+		if (nns->getKind() == NestedNameSpecifier::SpecifierKind::TypeSpec)
+			return TransformToCExpr(nns->getAsType());
+		
+		if (nns->getKind() == NestedNameSpecifier::SpecifierKind::TypeSpecWithTemplate)
+			return TransformToCExpr(nns->getAsType());
+		
+		if (nns->getKind() == NestedNameSpecifier::SpecifierKind::Identifier
+		||  nns->getKind() == NestedNameSpecifier::SpecifierKind::Global
+		||	nns->getKind() == NestedNameSpecifier::SpecifierKind::Super
+		||	nns->getKind() == NestedNameSpecifier::SpecifierKind::NamespaceAlias
+		||	nns->getKind() == NestedNameSpecifier::SpecifierKind::Namespace)
+			errs() << "Unhandled NestedNameSpecifier in ForwardNestedNameSpecifier \n"; 
+			
+		return nullptr;	
+	}
 			
 	CExpr* TransformToCExpr(Expr* e) {
 		errs() << "Entered Expr Transform \n";
@@ -58,10 +75,35 @@ private:
 			else
 				errs() << "A non-TemplateSpecializationType passed through \n";
 						 
-			CExpr* temp = TransformToCExpr(dsdre->getQualifier()->getAsType());
-			
-			return temp;
+			return TransformToCExpr(dsdre->getQualifier());
 		}	
+		
+		if (auto* ueotte = dyn_cast<UnaryExprOrTypeTraitExpr>(e))
+		{		
+			if (ueotte->getKind() == UnaryExprOrTypeTrait::UETT_SizeOf)
+				return new App(new Var(Prefix, "sizeof"), new Var(Prefix, ueotte->getTypeOfArgument().getAsString()));
+				
+			if (ueotte->getKind() == UnaryExprOrTypeTrait::UETT_AlignOf)
+				return new App(new Var(Prefix, "alignof"), new Var(Prefix, ueotte->getTypeOfArgument().getAsString()));
+					
+			if (ueotte->getKind() == UnaryExprOrTypeTrait::UETT_OpenMPRequiredSimdAlign 
+			 || ueotte->getKind() == UnaryExprOrTypeTrait::UETT_VecStep) 
+				errs() << "Unhandled UnaryExprOrTypeTrait \n";
+		}
+		
+		if (auto* dre = dyn_cast<DeclRefExpr>(e))
+		{
+			if (dre->hasQualifier())
+				return TransformToCExpr(dre->getQualifier());
+				
+			return new Var(Prefix, dre->getDecl()->getNameAsString()); 
+		}
+		
+		if (auto* sope = dyn_cast<SizeOfPackExpr>(e))
+		{
+			// can getPack() return something like a template?
+			return new App(new Var(Prefix, "sizeof..."), new Var(Prefix, "..." + sope->getPack()->getNameAsString()));	
+		}
 		
 		if (auto* cble = dyn_cast<CXXBoolLiteralExpr>(e)) {
 			if (cble->getValue())
@@ -183,14 +225,18 @@ private:
 											
 			for (auto i = ctd->getTemplatedDecl()->decls_begin(), e = ctd->getTemplatedDecl()->decls_end(); i != e; i++) {
 				CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
+				std::string pVarName = "";
+				
 				for(auto i = ctd->getTemplateParameters()->begin(), e = ctd->getTemplateParameters()->end(); i != e; i++) {	
+					pVarName = ((*i)->isParameterPack()) ? ("..." + (*i)->getNameAsString()) : (*i)->getNameAsString();
+					
 					if (tCLambdaTop == nullptr) {
 						tCLambdaTop = tCLambdaCurr = new CLambda(); 
-						tCLambdaCurr->pat = new PVar((*i)->getNameAsString()); 
+						tCLambdaCurr->pat = new PVar(pVarName); 
 					} else {
 						tCLambdaCurr->expr = new CLambda();
 						tCLambdaCurr = dynamic_cast<CLambda*>(tCLambdaCurr->expr); 	
-						tCLambdaCurr->pat = new PVar((*i)->getNameAsString());
+						tCLambdaCurr->pat = new PVar(pVarName);
 					}
 				}
 
@@ -232,7 +278,7 @@ private:
 			else
 				errs() << "A non-TemplateSpecializationType passed through \n";
 
-			return TransformToCExpr(dnt->getQualifier()->getAsType());
+			return TransformToCExpr(dnt->getQualifier());
 		} 
 		
 
@@ -243,6 +289,14 @@ private:
 
 		if (auto* rt = dyn_cast<RecordType>(t)) {
 			return TransformToCExpr(rt->getDecl());	
+		}
+			
+		// Can this be handled exactly the same as templatespecializationtype? 	
+		if (auto* dtst = dyn_cast<DependentTemplateSpecializationType>(t)) {
+			errs() << "Identifier Info: " << dtst->getIdentifier()->getName() << "\n \n";
+			errs() << "Number of Args: " << dtst->getArgs() << "\n \n";
+			
+			return TransformToCExpr(dtst->getQualifier());
 		}
 				
 		// same as above, possible loss of information. 
