@@ -335,7 +335,7 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 			delete var;
 			return new Var(Prefix, "id");
 		} else {					
-			return new App(new Var(Prefix, "const"), var);
+			return new App(new Var(Prefix, "const_"), var);
 		}
 
 	}
@@ -375,11 +375,11 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 			return app->exprL;
 		} else if (frR) {
 			app->exprR = RemoveVariable(name, names, app->exprR);
-			temp = new App(new App(new Var(Infix, "."), app->exprL), app->exprR);
+			temp = new App(new App(new Var(Infix, "compose"), app->exprL), app->exprR);
 			app->exprL = nullptr; app->exprR = nullptr; delete app;
 			return temp;
 		} else {
-			return new App(new Var(Prefix, "const"), app);
+			return new App(new Var(Prefix, "const_"), app);
 		}
 	}
 	
@@ -549,7 +549,8 @@ std::vector<std::string> TypeTraits = {"integral_constant",
 									   "add_rvalue_reference_t",  
 									   "make_signed",
 									   "make_unsigned",
-									   "make_signed_t",									   "make_signed",
+									   "make_signed_t",									   
+									   "make_signed",
 									   "make_unsigned_t",
 									   "remove_extent",
 									   "remove_all_extents",
@@ -663,14 +664,93 @@ std::vector<std::string> TypeTraits = {"integral_constant",
 									   "negation_v"	   									   									   
 									   };
  
+ std::vector<std::string> PrimitiveTypes =   {"short",
+											  "short int",
+											  "signed short",
+											  "signed short int",
+											  "unsigned short",
+											  "unsigned short int",
+											  "int",
+											  "signed",
+											  "signed int",
+											  "unsigned",
+											  "unsigned int",
+											  "long",
+											  "long long", 
+											  "long int",
+											  "signed long",
+											  "signed long int",
+											  "unsigned long",
+											  "unsigned long int",
+											  "long long",
+											  "long long int",
+											  "signed long long",
+											  "signed long long int",
+											  "unsigned long long",
+											  "unsigned long long int",
+											  "float",
+											  "double",
+											  "long double",
+											  "char",
+											  "signed char",
+											  "unsigned char",
+											  "wchar_t",
+											  "char16_t",
+											  "char32_t",
+											  "string",
+											  "std::string",
+											  "void",
+											  "nullptr_t",
+											  "std::nullptr_t",
+											  "nullptr",
+											  "bool",
+											  "true",
+											  "false"
+											 };
+											 
+ std::vector<std::string> CombinatorOrPreludeNames = { "const_",
+													   "id",
+													   "fix",
+													   "compose",
+													   "cons",
+													   "dollar",
+													   "flip",
+													   "foldl",
+													   "foldr",
+													   "get",
+													   "if_",
+													   "map",
+													   "fmap_tree"
+													 };
+											 
 
 // Create a Function is type traits that accepts a string, loops through
 // the array above and returns true. 
 bool isFromTypeTraits(std::string name) {
+	std::size_t found = name.find_last_of("::");
+	std::string modName = name.substr(0, found - 1);
 	for (unsigned int i = 0; i < TypeTraits.size(); ++i) {
-		if (name == TypeTraits[i])
+		if (name == TypeTraits[i] || modName == TypeTraits[i])
 			return true;
 	}
 	return false;
 }
+
+bool isAPrimitiveType(std::string name) {										
+	for (unsigned int i = 0; i < PrimitiveTypes.size(); ++i) {
+		if (name == PrimitiveTypes[i])
+			return true;
+	}
+	return false;
+}
+
+bool isACombinatorOrPrelude(std::string name) {										
+	for (unsigned int i = 0; i < CombinatorOrPreludeNames.size(); ++i) {
+		if (name == CombinatorOrPreludeNames[i])
+			return true;
+	}
+	return false;
+}
+
+
 

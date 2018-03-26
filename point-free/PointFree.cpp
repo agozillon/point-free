@@ -261,7 +261,31 @@ private:
 		errs() << "Entered Type Transform \n";
 	    t->dump();
 		errs() << "\n \n \n";
-						
+
+		if (auto* pt = dyn_cast<clang::PointerType>(t)) {
+			CExpr* expr = TransformToCExpr(pt->getPointeeType().getTypePtr());
+			
+			if (auto* var = dynamic_cast<Var*>(expr)) {	
+				App* app = new App();
+				app->exprL = var;
+				app->exprR = new Var(Prefix, "*"); 
+				expr = app;
+			}
+			
+			return expr;
+		}		
+		
+		if (auto* pet = dyn_cast<PackExpansionType>(t)) {			
+			CExpr* expr = TransformToCExpr(pet->getPattern().getTypePtr());
+			
+			if (auto* var = dynamic_cast<Var*>(expr)) 	
+				var->name = "..." + var->name;
+							  
+			return expr; 
+		}
+		
+		
+
 		if (auto* tt = dyn_cast<TypedefType>(t)) {
 			return TransformToCExpr(tt->getDecl());
 		}
@@ -291,14 +315,58 @@ private:
 			return TransformToCExpr(rt->getDecl());	
 		}
 			
-		// Can this be handled exactly the same as templatespecializationtype? 	
-		if (auto* dtst = dyn_cast<DependentTemplateSpecializationType>(t)) {
-			errs() << "Identifier Info: " << dtst->getIdentifier()->getName() << "\n \n";
-			errs() << "Number of Args: " << dtst->getArgs() << "\n \n";
-			
+		if (auto* dtst = dyn_cast<DependentTemplateSpecializationType>(t)) {		
 			return TransformToCExpr(dtst->getQualifier());
-		}
+			
+			/*	    	
+			App* curApp, * topApp; 
+			
+			// Will they always require an application, what happens if there is no arguements?
+			// if (curArg > 0) ?
+			curApp = topApp = new App(); 
+
+		    int curArg = 0, argCount = dtst->getNumArgs() - 1;
+			std::string name;	
+			for (auto i = dtst->end() - 1, e = dtst->begin() - 1; i != e; i--) {
+				CExpr* expr;
 				
+				if ((*i).getKind() == TemplateArgument::ArgKind::Type) {
+					expr = TransformToCExpr((*i).getAsType().getTypePtr());					
+				}
+				
+				if ((*i).getKind() == TemplateArgument::ArgKind::Expression) {
+					expr = TransformToCExpr((*i).getAsExpr());
+			    }
+			    
+	
+			    if (curArg < argCount) {		   		
+				    curApp->exprL = new App(); 
+				    curApp->exprR = expr; 		   
+				    curApp = dynamic_cast<App*>(curApp->exprL);
+			    } else {   				   
+				 	if (dtst->getIdentifier()->getName() == std::get<0>(QualifierNameStack.top()) 
+						&& std::get<1>(QualifierNameStack.top()) != "") {
+						errs() << "1 \n";
+						//curApp->exprL = TransformToCExpr(dtst->getTemplateName().getAsTemplateDecl());
+					} else {
+						errs() << "2 \n";			
+						curApp->exprL = TransformToCExpr(dtst->getQualifier());
+						
+						if (auto* var = dynamic_cast<Var*>(curApp->exprL)) 	
+							  var->name = var->name + "::" + std::string(dtst->getIdentifier()->getName());							 
+					}
+					
+					curApp->exprR = expr;										
+			    }   
+				
+			   curArg++;
+			}
+					
+			// perhaps I need to go deeper here rather than return?
+			return topApp;	*/
+			
+		}
+					
 		// same as above, possible loss of information. 
 		if (auto* tst = dyn_cast<TemplateSpecializationType>(t)) {
 			App* curApp, * topApp; 
@@ -384,14 +452,83 @@ private:
 			Print(app->exprR);
 			std::cout << ")";
 		}
-	
+
 		if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
 			std::cout << " (Lambda ";
 			Print(lambda->pat);
 			Print(lambda->expr);
 			std::cout << ")";
 		}
-  }	
+	}	
+
+	std::string ConvertCExprToCurtains(Pattern* p) {
+		std::string ret = "";
+		
+		if (p == nullptr)
+			ret += "nullptr error";
+
+		if (PVar* pVar = dynamic_cast<PVar*>(p)) {
+			ret += " (PVar " + pVar->name + ")";
+		}
+		
+		return ret;
+	}
+	
+  	std::string ConvertCExprToCurtains(CExpr* expr) {
+		std::string ret = "";
+		
+		if (expr == nullptr)
+			ret += "nullptr error";
+		
+		// (var->fix == Fixity::Infix), need to use this for logic
+		// need a function for this
+		if (Var* var = dynamic_cast<Var*>(expr)) {				 	
+			if (isFromTypeTraits(var->name)) {
+				std::size_t found = var->name.find_last_of("::");
+				
+				if (found != std::string::npos) { 
+					if (var->name.substr(found+1) == "t") // ::t
+						ret += "quote_c<std::" + var->name.substr(0, found - 1) +">";	
+					else if (var->name.substr(found+1) == "v") // ::v 
+						ret += "unhandled value \n";
+					  
+				} else {
+					ret += "quote<std::" + var->name + ">";			
+				}
+				
+			} else { 
+				// FOR RANDOM META-FUNCTIONS LIKE FOO I MIGHT HAVE TO MAKE A FUNCTION THAT CHECKS FOR KNOWN TYPES AND COMBINATORS/HASKELL FUNCTIONS
+				// AND THEN PUT THEM IN A QUOTE OR IGNORE A QUOTE BASED ON IT (PERHAPS A QUOTE OF A QUOTE IS NOT AN ERROR OR INCORRECT?)
+				
+				if (isAPrimitiveType(var->name) 
+				 || isACombinatorOrPrelude(var->name)) { // is an int, float etc.
+					ret += var->name;	
+				} else {
+					// I don't look for ::v, ::t in this case as these should be user specified metafunctions that 
+					// we can simplify and make point-free (so no need to use quote_c or state there is an error).
+					ret += "quote<" + var->name + ">"; 
+				}			
+			}
+		}
+		
+		if (App* app = dynamic_cast<App*>(expr)) {
+			ret += "eval<" + ConvertCExprToCurtains(app->exprL) + "," + ConvertCExprToCurtains(app->exprR) + ">";
+		}
+	
+		if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
+			ret += "should never reach a lambda";
+		}
+		
+		return ret;
+	}
+	
+	std::string ConvertToCurtains(CExpr* expr) {
+		std::string ret = ""; //"eval<";
+		ret += ConvertCExprToCurtains(expr);
+	//	ret += ">";
+		return ret;
+	}
+	
 
 public:
     explicit PointFreeVisitor(CompilerInstance *CI) 
@@ -413,18 +550,21 @@ public:
 		
 		// Can App's be directly replaced with Eval?	       	
 		if (ctd->getNameAsString() == StructureName) { 	
-				
 			CExpr* expr = TransformToCExpr(ctd);
 	
 			errs() << "Start of Test \n";
 			errs() << "\n";
 			errs() << "\n";
 	    	errs() << "\n";
-	    	 		
-   			 		
+	
 			// I believe this is the correct output for Grey. 
-			//CExpr* e2 = new CLambda(new PVar("T"), new App(new Var(Prefix, "is_polymorphic_t"), new App(new Var(Prefix, "Foo"), new Var(Prefix, "T"))));
-		/*				 
+			// CExpr* e = new CLambda(new PVar("T"), new App(new Var(Prefix, "is_polymorphic_t"), new App(new Var(Prefix, "Foo"), new Var(Prefix, "T"))));
+			// CExpr* e = new CLambda(new PVar("F"), new CLambda(new PVar("...Ts"), new App(new App(new Var(Prefix, "F::m_invoke"), new Var(Prefix, "F")), new Var(Prefix, "...Ts"))));
+			// CExpr* e = new CLambda(new PVar("F"), new CLambda(new PVar("...Ts"), new App(new App(new Var(Prefix, "F::m_invoke"), new Var(Prefix, "...Ts")), new Var(Prefix, "F"))));
+			// CExpr* e = new CLambda(new PVar("F"), new CLambda(new PVar("...Ts"), new App(new App(new App(new Var(Infix, "::"), new Var(Prefix, "F")), new Var(Prefix, "m_invoke")), new Var(Prefix, "...Ts"))));
+			
+		
+	/*			
 			errs() << "\n";
 	    	Print(e);
 	    	std::cout << "\n";	
@@ -435,9 +575,10 @@ public:
 		    errs() << "\n";
 			errs() << "\n";
 			errs() << "End of Test \n";
-		*/	
-			
+	*/
+	
 	    	errs() << "ClassTemplateDecl Converted To CExpr: \n";
+	    	
 	    	Print(expr); 
 	    	std::cout << "\n";	
 	    	errs() << "\n";
@@ -445,8 +586,8 @@ public:
 	    	errs() << "CExpr After Point Free Conversion: \n";
 	    	expr = PointFree(expr);
 			Print(expr);
+	    	std::cout << "\n Print Curtains Lambda: " << ConvertToCurtains(expr) << "\n";
 			std::cout << "\n";
-			   
         }
              
         return true;
