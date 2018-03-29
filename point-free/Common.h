@@ -362,7 +362,7 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 		if (frL && frR) {
 			app->exprL = RemoveVariable(name, names, app->exprL);
 			app->exprR = RemoveVariable(name, names, app->exprR);
-			temp = new App(new App(new Var(Prefix, "ap"), app->exprL), app->exprR);
+			temp = new App(new App(new Var(Prefix, "S"), app->exprL), app->exprR); // S combinator, instead of Haskell's ap monad 
 			app->exprL = nullptr; app->exprR = nullptr; delete app;
 			return temp;
 		} else if (frL) {
@@ -375,11 +375,11 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 			return app->exprL;
 		} else if (frR) {
 			app->exprR = RemoveVariable(name, names, app->exprR);
-			temp = new App(new App(new Var(Infix, "compose"), app->exprL), app->exprR);
+			temp = new App(new App(new Var(Infix, "compose"), app->exprL), app->exprR); // the compose metafunction instead of Haskell .
 			app->exprL = nullptr; app->exprR = nullptr; delete app;
 			return temp;
 		} else {
-			return new App(new Var(Prefix, "const_"), app);
+			return new App(new Var(Prefix, "const_"), app); // the const_ metafunction instead of haskell const (const is also a reserved word in C++)
 		}
 	}
 	
@@ -710,6 +710,7 @@ std::vector<std::string> TypeTraits = {"integral_constant",
 											 
  std::vector<std::string> CombinatorOrPreludeNames = { "const_",
 													   "id",
+													   "S",
 													   "fix",
 													   "compose",
 													   "cons",
