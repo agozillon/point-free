@@ -1,5 +1,0 @@
-
-The clang/lib/tooling/ directory may have a lot of interesting functions I can make use of to make life easier, worth looking through. 
-
-if i have to insert an include for the library it can be done through the rewriter, just insert some text! (probably not ideal, what happens when the code is compiled on a different PC with a different file path to the library?) 
-
