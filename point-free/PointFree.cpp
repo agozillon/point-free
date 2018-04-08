@@ -129,6 +129,89 @@ private:
 		d->dump();
 		errs() << "\n \n \n";
 
+		if (auto* ctpsd = dyn_cast<ClassTemplatePartialSpecializationDecl>(d)) {
+			if (isFromTypeTraits(ctpsd->getNameAsString())) {
+				std::string traitName = ctpsd->getNameAsString();
+				
+				if (traitName == std::get<0>(QualifierNameStack.top()) 
+				&& std::get<1>(QualifierNameStack.top()) == "value") {
+					traitName += "::v";				
+					
+					if (QualifierNameStack.size() > 0)
+						QualifierNameStack.pop();
+				}
+								
+				if (traitName == std::get<0>(QualifierNameStack.top())
+				 && std::get<1>(QualifierNameStack.top()) == "type") {
+					traitName += "::t";			
+
+					if (QualifierNameStack.size() > 0)
+						QualifierNameStack.pop();
+				}
+							
+				return new Var(Prefix, traitName);									
+			}
+			
+			for (auto i = ctpsd->decls_begin(), e = ctpsd->decls_end(); i != e; i++) {
+				errs() << "Looping \n";
+			//	if (auto* nd = dyn_cast<NamedDecl>(*i))
+			//		errs() << nd->getNameAsString();
+					
+				CLambda *tCLambdaTop = nullptr, *tCLambdaCurr = nullptr;
+				std::string pVarName = "";
+				
+				for(auto i = ctpsd->getTemplateParameters()->begin(), e = ctpsd->getTemplateParameters()->end(); i != e; i++) {	
+					pVarName = ((*i)->isParameterPack()) ? ("..." + (*i)->getNameAsString()) : (*i)->getNameAsString();
+					
+					if (tCLambdaTop == nullptr) {
+						tCLambdaTop = tCLambdaCurr = new CLambda(); 
+						tCLambdaCurr->pat = new PVar(pVarName); 
+					} else {
+						tCLambdaCurr->expr = new CLambda();
+						tCLambdaCurr = dynamic_cast<CLambda*>(tCLambdaCurr->expr); 	
+						tCLambdaCurr->pat = new PVar(pVarName);
+					}
+				}
+			   
+			    if (auto* nd = dyn_cast<NamedDecl>(*i)) {
+					std::cout << nd->getNameAsString() << "\n";
+					std::cout << std::get<0>(QualifierNameStack.top()) << "\n";
+					std::cout << std::get<1>(QualifierNameStack.top()) << "\n";
+					
+					if (ctpsd->getNameAsString() == std::get<0>(QualifierNameStack.top())
+					 && nd->getNameAsString() == std::get<1>(QualifierNameStack.top())) {
+					
+						if (QualifierNameStack.size() > 0)
+							QualifierNameStack.pop();
+										
+						tCLambdaCurr->expr = TransformToCExpr(*i);
+						return tCLambdaTop;
+					}
+				}
+			}
+			
+		//	for (unsigned int i = 0; i < ctpsd->getTemplateParameters()->size(); ++i)
+		//		ctpsd->getTemplateParameters()->getParam(i)->dump();
+
+//			for (unsigned int i = 0; i < ctpsd->getTemplateInstantiationArgs().size(); ++i)
+//				ctpsd->getTemplateInstantiationArgs()[i].getAsType().dump();
+			 
+			for (unsigned int i = 0; i < ctpsd->getTemplateArgs().size(); ++i)
+				ctpsd->getTemplateArgs()[i].getAsType().dump();
+				
+			return nullptr;
+		}
+
+		if (auto* ctsd = dyn_cast<ClassTemplateSpecializationDecl>(d)) {
+			for (unsigned int i = 0; i < ctsd->getTemplateInstantiationArgs().size(); ++i)
+				ctsd->getTemplateInstantiationArgs()[i].getAsType().dump();
+					
+			//for (unsigned int i = 0; i < ctsd->getTemplateArgs().size(); ++i)
+			//	ctsd->getTemplateArgs()[i].getAsType().dump();
+				 
+			return nullptr;			
+		}
+
 		if (auto* tad = dyn_cast<TypeAliasDecl>(d)) {	
 			return TransformToCExpr(tad->getUnderlyingType().getTypePtr());
 		}	
@@ -163,44 +246,25 @@ private:
 		}
 	
 		if (auto* vd = dyn_cast<VarDecl>(d)) {
-		//	vd->getDeclName().dump();    // gets the :: right hand component
-		//	errs() << vd->getIdentifier()->getNameStart() << "\n";
-		//	errs() << vd->getName() << "\n";
-		//	errs() << vd->hasDefinition() << "\n";
-		//	if(vd->getEvaluatedValue())
-		//		errs() << "there is an evaluated value \n";
-		//	else
-		//		errs() << "there is no evaluated value \n";			
-			
 			if (vd->hasInit())		 
 				return TransformToCExpr(vd->getInit());
 		}
 		
-		if (auto* fd = dyn_cast<FieldDecl>(d)) { 
+		if (auto* fd = dyn_cast<FieldDecl>(d)) {
+		 
 		  if (fd->hasInClassInitializer())
 			  return TransformToCExpr(fd->getInClassInitializer()); 			
 		}
 			
 		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
-			errs() << "this CXXRecordDecl node could be an problem \n";
+			errs() << "this CXXRecordDecl node could be a problem \n";
 			if (std::get<0>(QualifierNameStack.top()) == ""
 			 && std::get<1>(QualifierNameStack.top()) == "") {
 				return new Var(Prefix, crd->getNameAsString()); 
-			}
-			
-			/*
-			for (auto i =crd->decls_begin(), e = crd->decls_end(); i != e; i++) {				
-				if (auto* nd = dyn_cast<NamedDecl>(*i)) {
-					if (nd->getNameAsString() == TypeAliasOrDefName) {
-						TypeAliasOrDefName = "";
-						return TransformToCExpr(*i);	
-					}
-				}	
-			}*/	
+			}	
 		}
 				
 		if (auto* ctd = dyn_cast<ClassTemplateDecl>(d)) {	
-			
 			if(isFromTypeTraits(ctd->getNameAsString())) {
 				std::string traitName = ctd->getNameAsString();
 				
@@ -265,13 +329,11 @@ private:
 		if (auto* pt = dyn_cast<clang::PointerType>(t)) {
 			CExpr* expr = TransformToCExpr(pt->getPointeeType().getTypePtr());
 			
-			if (auto* var = dynamic_cast<Var*>(expr)) {	
-				App* app = new App();
-				app->exprL = var;
-				app->exprR = new Var(Prefix, "*"); 
-				expr = app;
-			}
-			
+			App* app = new App();
+			app->exprL = expr;
+			app->exprR = new Var(Prefix, "*"); 
+			expr = app;
+		
 			return expr;
 		}		
 		
@@ -283,8 +345,6 @@ private:
 							  
 			return expr; 
 		}
-		
-		
 
 		if (auto* tt = dyn_cast<TypedefType>(t)) {
 			return TransformToCExpr(tt->getDecl());
@@ -316,55 +376,7 @@ private:
 		}
 			
 		if (auto* dtst = dyn_cast<DependentTemplateSpecializationType>(t)) {		
-			return TransformToCExpr(dtst->getQualifier());
-			
-			/*	    	
-			App* curApp, * topApp; 
-			
-			// Will they always require an application, what happens if there is no arguements?
-			// if (curArg > 0) ?
-			curApp = topApp = new App(); 
-
-		    int curArg = 0, argCount = dtst->getNumArgs() - 1;
-			std::string name;	
-			for (auto i = dtst->end() - 1, e = dtst->begin() - 1; i != e; i--) {
-				CExpr* expr;
-				
-				if ((*i).getKind() == TemplateArgument::ArgKind::Type) {
-					expr = TransformToCExpr((*i).getAsType().getTypePtr());					
-				}
-				
-				if ((*i).getKind() == TemplateArgument::ArgKind::Expression) {
-					expr = TransformToCExpr((*i).getAsExpr());
-			    }
-			    
-	
-			    if (curArg < argCount) {		   		
-				    curApp->exprL = new App(); 
-				    curApp->exprR = expr; 		   
-				    curApp = dynamic_cast<App*>(curApp->exprL);
-			    } else {   				   
-				 	if (dtst->getIdentifier()->getName() == std::get<0>(QualifierNameStack.top()) 
-						&& std::get<1>(QualifierNameStack.top()) != "") {
-						errs() << "1 \n";
-						//curApp->exprL = TransformToCExpr(dtst->getTemplateName().getAsTemplateDecl());
-					} else {
-						errs() << "2 \n";			
-						curApp->exprL = TransformToCExpr(dtst->getQualifier());
-						
-						if (auto* var = dynamic_cast<Var*>(curApp->exprL)) 	
-							  var->name = var->name + "::" + std::string(dtst->getIdentifier()->getName());							 
-					}
-					
-					curApp->exprR = expr;										
-			    }   
-				
-			   curArg++;
-			}
-					
-			// perhaps I need to go deeper here rather than return?
-			return topApp;	*/
-			
+			return TransformToCExpr(dtst->getQualifier());			
 		}
 					
 		// same as above, possible loss of information. 
@@ -417,8 +429,6 @@ private:
 			return new Var(Prefix, ttpt->getIdentifier()->getName());
 		}
 	
-
-		
 		// hard-coded type like Int, float, string
 		if (auto* bt = dyn_cast<BuiltinType>(t)) {
 			PrintingPolicy pp = PrintingPolicy(LangOptions());
@@ -429,38 +439,6 @@ private:
 		return nullptr;
 	} 
 	
-	void Print(Pattern* p) {
-		if (p == nullptr)
-			std::cout << "nullptr error \n";
-
-		if (PVar* pVar = dynamic_cast<PVar*>(p)) {
-			std::cout << " (PVar " << pVar->name << ")";
-		}
-	}
-
-	void Print(CExpr* expr) {
-		if (expr == nullptr)
-			std::cout << "nullptr error \n";
-		
-		if (Var* var = dynamic_cast<Var*>(expr)) {				 
-			std::cout << " (Var " << ((var->fix == Fixity::Infix) ? "Infix " : "Prefix ") << var->name << ")";
-		}
-		
-		if (App* app = dynamic_cast<App*>(expr)) {
-			std::cout << " (App ";
-			Print(app->exprL);
-			Print(app->exprR);
-			std::cout << ")";
-		}
-
-		if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
-			std::cout << " (Lambda ";
-			Print(lambda->pat);
-			Print(lambda->expr);
-			std::cout << ")";
-		}
-	}	
-
 	std::string ConvertCExprToCurtains(Pattern* p) {
 		std::string ret = "";
 		
@@ -496,10 +474,7 @@ private:
 					ret += "quote<std::" + var->name + ">";			
 				}
 				
-			} else { 
-				// FOR RANDOM META-FUNCTIONS LIKE FOO I MIGHT HAVE TO MAKE A FUNCTION THAT CHECKS FOR KNOWN TYPES AND COMBINATORS/HASKELL FUNCTIONS
-				// AND THEN PUT THEM IN A QUOTE OR IGNORE A QUOTE BASED ON IT (PERHAPS A QUOTE OF A QUOTE IS NOT AN ERROR OR INCORRECT?)
-				
+			} else { 		
 				if (isAPrimitiveType(var->name) 
 				 || isACombinatorOrPrelude(var->name)) { // is an int, float etc.
 					ret += var->name;	
@@ -523,10 +498,7 @@ private:
 	}
 	
 	std::string ConvertToCurtains(CExpr* expr) {
-		std::string ret = ""; //"eval<";
-		ret += ConvertCExprToCurtains(expr);
-	//	ret += ">";
-		return ret;
+		return ConvertCExprToCurtains(expr);
 	}
 	
 
@@ -548,50 +520,67 @@ public:
     // as classes. 
     virtual bool VisitClassTemplateDecl(ClassTemplateDecl* ctd) { 
 		
+		  	 
 		// Can App's be directly replaced with Eval?	       	
-		if (ctd->getNameAsString() == StructureName) { 	
+		if (ctd->getNameAsString() == StructureName) { 		    	
+			auto topCopy = std::make_pair(std::get<0>(QualifierNameStack.top()), std::get<1>(QualifierNameStack.top()));
+			std::cout << "Start of Test \n";
+			std::cout << "\n";
+			std::cout << "\n";
+	    	std::cout << "\n";
+
 			CExpr* expr = TransformToCExpr(ctd);
-	
-			errs() << "Start of Test \n";
-			errs() << "\n";
-			errs() << "\n";
-	    	errs() << "\n";
-	
-			// I believe this is the correct output for Grey. 
-			// CExpr* e = new CLambda(new PVar("T"), new App(new Var(Prefix, "is_polymorphic_t"), new App(new Var(Prefix, "Foo"), new Var(Prefix, "T"))));
-			// CExpr* e = new CLambda(new PVar("F"), new CLambda(new PVar("...Ts"), new App(new App(new Var(Prefix, "F::m_invoke"), new Var(Prefix, "F")), new Var(Prefix, "...Ts"))));
-			// CExpr* e = new CLambda(new PVar("F"), new CLambda(new PVar("...Ts"), new App(new App(new Var(Prefix, "F::m_invoke"), new Var(Prefix, "...Ts")), new Var(Prefix, "F"))));
-			// CExpr* e = new CLambda(new PVar("F"), new CLambda(new PVar("...Ts"), new App(new App(new App(new Var(Infix, "::"), new Var(Prefix, "F")), new Var(Prefix, "m_invoke")), new Var(Prefix, "...Ts"))));
-			
-		
-	/*			
-			errs() << "\n";
-	    	Print(e);
-	    	std::cout << "\n";	
-	    	e = PointFree(e);
-	    	Print(e);
-			std::cout << "\n";	
-	    	errs() << "\n";
-		    errs() << "\n";
-			errs() << "\n";
-			errs() << "End of Test \n";
-	*/
-	
-	    	errs() << "ClassTemplateDecl Converted To CExpr: \n";
-	    	
+	    	std::cout << "ClassTemplateDecl Converted To CExpr: \n";
 	    	Print(expr); 
 	    	std::cout << "\n";	
-	    	errs() << "\n";
-	    	errs() << "\n";
-	    	errs() << "CExpr After Point Free Conversion: \n";
+	    	std::cout << "\n";
+	    	std::cout << "\n";
+	    	std::cout << "CExpr After Point Free Conversion: \n";
 	    	expr = PointFree(expr);
 			Print(expr);
-	    	std::cout << "\n Print Curtains Lambda: " << ConvertToCurtains(expr) << "\n";
-			std::cout << "\n";
-        }
-             
+	    	std::cout << "\n Print Curtains Lambda: \n" << ConvertToCurtains(expr) << "\n";
+			
+			QualifierNameStack.push(topCopy);
+	    }
+    	
+    			         
         return true;
     }
+   
+   /* 
+    virtual bool VisitClassTemplatePartialSpecializationDecl(ClassTemplatePartialSpecializationDecl* ctpsd) {
+		if (ctpsd->getNameAsString() == StructureName && ctpsd->isExplicitSpecialization() == false) {
+			std::cout << "CTPSD \n";
+			errs() << ctpsd->isExplicitSpecialization()  << "\n";
+			ctpsd->dump();	
+		}
+		
+		return true;
+	}*/
+			
+    virtual bool VisitClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl* ctsd) {
+		if (ctsd->getNameAsString() == StructureName) { 
+			auto topCopy = std::make_pair(std::get<0>(QualifierNameStack.top()), std::get<1>(QualifierNameStack.top()));
+			std::cout << "CTSD \n";
+			errs() << ctsd->isExplicitSpecialization()  << "\n";
+			errs() << ctsd->isExplicitInstantiationOrSpecialization() << "\n"; 
+			
+			ctsd->dump();
+			
+			std::cout << "\n";
+			std::cout << "\n";
+	    	std::cout << "\n";
+		
+			CExpr* expr = TransformToCExpr(ctsd);
+	    	std::cout << "ClassTemplateSpecializationDecl Converted To CExpr: \n";
+			Print(expr);
+			std::cout << "\n";
+			QualifierNameStack.push(topCopy);
+		}
+
+		return true;
+	}
+
 };
 
 

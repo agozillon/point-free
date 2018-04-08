@@ -99,6 +99,390 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////////////
+/* Helpers 								  							  */
+////////////////////////////////////////////////////////////////////////
+void Print(Pattern* p) {
+	if (p == nullptr)
+		std::cout << "nullptr error \n";
+
+	if (PVar* pVar = dynamic_cast<PVar*>(p)) {
+		std::cout << " (PVar " << pVar->name << ")";
+	}
+}
+	
+void Print(CExpr* expr) {
+	if (expr == nullptr)
+		std::cout << "nullptr error \n";
+	
+	if (Var* var = dynamic_cast<Var*>(expr)) {				 
+		std::cout << " (Var " << ((var->fix == Fixity::Infix) ? "Infix " : "Prefix ") << var->name << ")";
+	}
+	
+	if (App* app = dynamic_cast<App*>(expr)) {
+		std::cout << " (App ";
+		Print(app->exprL);
+		Print(app->exprR);
+		std::cout << ")";
+	}
+
+	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
+		std::cout << " (Lambda ";
+		Print(lambda->pat);
+		Print(lambda->expr);
+		std::cout << ")";
+	}
+}	
+	
+void ConvertNonTypesToMetafunctions(CExpr* expr) {
+	if (Var* var = dynamic_cast<Var*>(expr)) {
+		if (var->name == "*")
+			var->name = "add_pointer_t";
+	}
+
+	if (App* app = dynamic_cast<App*>(expr)) {
+		ConvertNonTypesToMetafunctions(app->exprL);
+		ConvertNonTypesToMetafunctions(app->exprR);
+	}
+
+	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
+		ConvertNonTypesToMetafunctions(lambda->expr);
+		
+		// not sure if I want to swap these to meta-functions 
+		if (PVar* pVar = dynamic_cast<PVar*>(lambda->pat)) {/*pVar->name*/}
+
+		if (PTuple* pTup = dynamic_cast<PTuple*>(lambda->pat)) {}
+
+		if (PCons* pCons = dynamic_cast<PCons*>(lambda->pat)) {}
+	}
+}
+
+
+void Shuffle(CExpr* expr) {
+	if (Var* var = dynamic_cast<Var*>(expr)) {}
+
+	if (App* app = dynamic_cast<App*>(expr)) {
+		if (Var* var = dynamic_cast<Var*>(app->exprR)) {
+			if(var->name == "add_pointer_t") {
+				CExpr* temp = var; 
+				app->exprR = app->exprL;
+				app->exprL = var; 
+			}	
+		} 
+			
+		Shuffle(app->exprL);
+		Shuffle(app->exprR);
+	}
+
+	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
+		Shuffle(lambda->expr);
+	}
+		
+}
+
+// Test with the ones we currently use before commiting to this.
+// I might have to add _t and _v variants. 
+std::vector<std::string> TypeTraits = {"integral_constant",
+									   "bool_constant",
+									   "true_type",
+									   "false_type",
+									   "is_void",
+									   "is_null_pointer",
+									   "is_integral",
+									   "is_floating_point",
+									   "is_array",
+									   "is_pointer",
+									   "is_lvalue_reference",
+									   "is_rvalue_reference",
+									   "is_member_object_pointer",
+									   "is_member_function_pointer",
+									   "is_enum",
+									   "is_union",
+									   "is_class",
+									   "is_function",
+									   "is_reference",
+									   "is_arithmetic",
+									   "is_fundamental",
+									   "is_object",
+									   "is_scalar",
+									   "is_compound",
+									   "is_member_pointer",
+									   "is_const",
+									   "is_volatile",
+									   "is_trivial",
+									   "is_trivially_copyable",
+									   "is_standard_layout",
+									   "is_pod",
+									   "is_empty",
+									   "is_polymorphic",
+									   "is_abstract",
+									   "is_final",
+									   "is_aggregate",
+									   "is_signed",
+									   "is_unsigned",
+									   "is_constructible",
+									   "is_default_constructible",
+									   "is_copy_constructible",
+									   "is_move_constructible",
+									   "is_assignable",
+									   "is_copy_assignable",
+									   "is_move_assignable",
+									   "is_swappable_with",
+									   "is_swappable",
+									   "is_destructible",	
+									   "is_trivially_constructible",
+									   "is_trivially_default_constructible",
+									   "is_trivially_copy_constructible",
+									   "is_trivially_move_constructible",
+									   "is_trivially_assignable",
+									   "is_trivially_copy_assignable",
+									   "is_trivially_move_assignable",
+									   "is_trivially_destructible",							 
+									   "is_nothrow_constructible",
+									   "is_nothrow_default_constructible",
+									   "is_nothrow_copy_constructible",
+									   "is_nothrow_move_assignable",
+									   "is_nothrow_swappable_with",
+									   "is_nothrow_swappable",
+									   "is_nothrow_destructible",
+									   "has_virtual_destructor",
+									   "has_unique_object_representations",
+									   "alignment_of",
+									   "rank",
+									   "extent",
+									   "is_same",
+									   "is_base_of",
+									   "is_convertible",
+									   "is_invocable",
+									   "is_invocable_r",
+									   "is_nothrow_invocable",
+									   "is_nothrow_invocable_r",
+									   "remove_const",
+									   "remove_volatile",
+									   "remove_cv",
+									   "add_const",
+									   "add_volatile",
+									   "add_cv",
+									   "remove_const_t",
+									   "remove_volatile_t",
+									   "remove_cv_t",
+									   "add_const_t",
+									   "add_volatile_t",
+									   "add_cv_t",
+									   "remove_reference",
+									   "add_lvalue_reference",
+									   "add_rvalue_reference",
+									   "remove_reference_t",
+									   "add_lvalue_reference_t",
+									   "add_rvalue_reference_t",  
+									   "make_signed",
+									   "make_unsigned",
+									   "make_signed_t",									   
+									   "make_signed",
+									   "make_unsigned_t",
+									   "remove_extent",
+									   "remove_all_extents",
+									   "remove_extent_t",
+									   "remove_all_extents_t",
+									   "remove_pointer",
+									   "add_pointer",
+									   "remove_pointer_t",
+									   "add_pointer_t",
+									   "aligned_storage",
+									   "aligned_union",
+									   "decay",
+									   "remove_cvref",
+									   "enable_if",
+									   "conditional",
+									   "common_type",
+									   "underlying_type",
+									   "result_of",
+									   "result_of<F(ArgTypes...)>",
+									   "invoke_result",
+									   "aligned_storage_t",
+									   "aligned_union_t",
+									   "decay_t",
+									   "remove_cvref_t",
+									   "enable_if_t", 
+									   "conditional_t",
+									   "common_type_t",
+									   "underlying_type_t",
+									   "result_of_t",
+									   "invoke_result_t",
+									   "void_t",
+									   "conjunction",
+									   "disjunction",
+									   "negation",
+									   "is_void_v",
+									   "is_null_pointer_v",
+									   "is_integral_v",
+									   "is_floating_point_v",
+									   "is_array_v",
+									   "is_pointer_v",
+									   "is_lvalue_reference_v",
+									   "is_rvalue_reference_v",
+									   "is_member_object_pointer_v",
+									   "is_member_function_pointer_v",
+									   "is_enum_v",
+									   "is_union_v",
+									   "is_class_v",
+									   "is_function_v",
+									   "is_reference_v",
+									   "is_arithmetic_v",
+									   "is_fundamental_v",
+									   "is_object_v",
+									   "is_scalar_v",
+									   "is_compound_v",
+									   "is_member_pointer_v",
+									   "is_const_v",
+									   "is_volatile_v",
+									   "is_trivial_v",
+									   "is_trivially_copyable_v",
+									   "is_standard_layout_v",
+									   "is_pod_v",
+									   "is_empty_v",					   
+									   "is_polymorphic_v",
+									   "is_abstract_v",				
+									   "is_final_v",
+									   "is_aggregate_v",
+									   "is_signed_v",
+									   "is_unsigned_v",
+									   "is_constructible_v",
+									   "is_default_constructible_v",
+									   "is_copy_constructible_v",
+									   "is_move_constructible_v",
+									   "is_assignable_v",
+									   "is_copy_assignable_v",
+									   "is_move_assignable_v",
+									   "is_swappable_with_v",
+									   "is_swappable_v",
+									   "is_destructible_v",
+									   "is_trivially_constructible_v",
+									   "is_trivially_default_constructible_v",
+									   "is_trivially_copy_constructible_v",
+									   "is_trivially_move_constructible_v",
+									   "is_trivially_assignable_v",
+									   "is_trivially_copy_assignable_v",
+									   "is_trivially_move_assignable_v",
+									   "is_trivially_destructible_v",
+									   "is_nothrow_constructible_v",
+									   "is_nothrow_default_constructible_v",
+									   "is_nothrow_copy_constructible_v",
+									   "is_nothrow_move_constructible_v",
+									   "is_nothrow_assignable_v",
+									   "is_nothrow_copy_assignable_v",
+									   "is_nothrow_move_assignable_v",
+									   "is_nothrow_swappable_with_v",
+									   "is_nothrow_swappable_v",
+									   "is_nothrow_destructible_v",
+									   "has_virtual_destructor_v",
+									   "has_unique_object_representations_v",
+									   "alignment_of_v",
+									   "rank_v",
+									   "extent_v",
+									   "is_same_v",
+									   "is_base_of_v",
+									   "is_convertible_v",
+									   "is_invocable_v",
+									   "is_invocable_r_v",
+									   "is_nothrow_invocable_v",
+									   "is_nothrow_invocable_r_v",
+									   "conjunction_v",
+									   "disjunction_v",
+									   "negation_v"	   									   									   
+									   };
+ 
+ std::vector<std::string> PrimitiveTypes =   {"short",
+											  "short int",
+											  "signed short",
+											  "signed short int",
+											  "unsigned short",
+											  "unsigned short int",
+											  "int",
+											  "signed",
+											  "signed int",
+											  "unsigned",
+											  "unsigned int",
+											  "long",
+											  "long long", 
+											  "long int",
+											  "signed long",
+											  "signed long int",
+											  "unsigned long",
+											  "unsigned long int",
+											  "long long",
+											  "long long int",
+											  "signed long long",
+											  "signed long long int",
+											  "unsigned long long",
+											  "unsigned long long int",
+											  "float",
+											  "double",
+											  "long double",
+											  "char",
+											  "signed char",
+											  "unsigned char",
+											  "wchar_t",
+											  "char16_t",
+											  "char32_t",
+											  "string",
+											  "std::string",
+											  "void",
+											  "nullptr_t",
+											  "std::nullptr_t",
+											  "nullptr",
+											  "bool",
+											  "true",
+											  "false"
+											 };
+											 
+ std::vector<std::string> CombinatorOrPreludeNames = { "const_",
+													   "id",
+													   "S",
+													   "fix",
+													   "compose",
+													   "cons",
+													   "dollar",
+													   "flip",
+													   "foldl",
+													   "foldr",
+													   "get",
+													   "if_",
+													   "map",
+													   "fmap_tree"
+													 };
+											 
+
+// Create a Function is type traits that accepts a string, loops through
+// the array above and returns true. 
+bool isFromTypeTraits(std::string name) {
+	std::size_t found = name.find_last_of("::");
+	std::string modName = name.substr(0, found - 1);
+	for (unsigned int i = 0; i < TypeTraits.size(); ++i) {
+		if (name == TypeTraits[i] || modName == TypeTraits[i])
+			return true;
+	}
+	return false;
+}
+
+bool isAPrimitiveType(std::string name) {										
+	for (unsigned int i = 0; i < PrimitiveTypes.size(); ++i) {
+		if (name == PrimitiveTypes[i])
+			return true;
+	}
+	return false;
+}
+
+bool isACombinatorOrPrelude(std::string name) {										
+	for (unsigned int i = 0; i < CombinatorOrPreludeNames.size(); ++i) {
+		if (name == CombinatorOrPreludeNames[i])
+			return true;
+	}
+	return false;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////
 /* Point-Free Algorithm 											  */
 ////////////////////////////////////////////////////////////////////////
 
@@ -439,6 +823,10 @@ CExpr* TransformRecursive(CExpr* expr, std::vector<std::string> names) {
 CExpr* Transform(CExpr* expr) {
 	std::vector<std::string> nameList;
 	gatherNames(expr, nameList);
+	ConvertNonTypesToMetafunctions(expr);
+	Shuffle(expr);
+	//Print(expr);
+	//std::cout << "Print ended /n";
 	return TransformRecursive(expr, nameList);
 }
 
@@ -448,310 +836,7 @@ CExpr* PointFree(CExpr* expr) {
 }
 
 
-////////////////////////////////////////////////////////////////////////
-/* Helpers 								  							  */
-////////////////////////////////////////////////////////////////////////
 
-// Test with the ones we currently use before commiting to this.
-// I might have to add _t and _v variants. 
-std::vector<std::string> TypeTraits = {"integral_constant",
-									   "bool_constant",
-									   "true_type",
-									   "false_type",
-									   "is_void",
-									   "is_null_pointer",
-									   "is_integral",
-									   "is_floating_point",
-									   "is_array",
-									   "is_pointer",
-									   "is_lvalue_reference",
-									   "is_rvalue_reference",
-									   "is_member_object_pointer",
-									   "is_member_function_pointer",
-									   "is_enum",
-									   "is_union",
-									   "is_class",
-									   "is_function",
-									   "is_reference",
-									   "is_arithmetic",
-									   "is_fundamental",
-									   "is_object",
-									   "is_scalar",
-									   "is_compound",
-									   "is_member_pointer",
-									   "is_const",
-									   "is_volatile",
-									   "is_trivial",
-									   "is_trivially_copyable",
-									   "is_standard_layout",
-									   "is_pod",
-									   "is_empty",
-									   "is_polymorphic",
-									   "is_abstract",
-									   "is_final",
-									   "is_aggregate",
-									   "is_signed",
-									   "is_unsigned",
-									   "is_constructible",
-									   "is_default_constructible",
-									   "is_copy_constructible",
-									   "is_move_constructible",
-									   "is_assignable",
-									   "is_copy_assignable",
-									   "is_move_assignable",
-									   "is_swappable_with",
-									   "is_swappable",
-									   "is_destructible",	
-									   "is_trivially_constructible",
-									   "is_trivially_default_constructible",
-									   "is_trivially_copy_constructible",
-									   "is_trivially_move_constructible",
-									   "is_trivially_assignable",
-									   "is_trivially_copy_assignable",
-									   "is_trivially_move_assignable",
-									   "is_trivially_destructible",							 
-									   "is_nothrow_constructible",
-									   "is_nothrow_default_constructible",
-									   "is_nothrow_copy_constructible",
-									   "is_nothrow_move_assignable",
-									   "is_nothrow_swappable_with",
-									   "is_nothrow_swappable",
-									   "is_nothrow_destructible",
-									   "has_virtual_destructor",
-									   "has_unique_object_representations",
-									   "alignment_of",
-									   "rank",
-									   "extent",
-									   "is_same",
-									   "is_base_of",
-									   "is_convertible",
-									   "is_invocable",
-									   "is_invocable_r",
-									   "is_nothrow_invocable",
-									   "is_nothrow_invocable_r",
-									   "remove_const",
-									   "remove_volatile",
-									   "remove_cv",
-									   "add_const",
-									   "add_volatile",
-									   "add_cv",
-									   "remove_const_t",
-									   "remove_volatile_t",
-									   "remove_cv_t",
-									   "add_const_t",
-									   "add_volatile_t",
-									   "add_cv_t",
-									   "remove_reference",
-									   "add_lvalue_reference",
-									   "add_rvalue_reference",
-									   "remove_reference_t",
-									   "add_lvalue_reference_t",
-									   "add_rvalue_reference_t",  
-									   "make_signed",
-									   "make_unsigned",
-									   "make_signed_t",									   
-									   "make_signed",
-									   "make_unsigned_t",
-									   "remove_extent",
-									   "remove_all_extents",
-									   "remove_extent_t",
-									   "remove_all_extents_t",
-									   "remove_pointer",
-									   "add_pointer",
-									   "remove_pointer_t",
-									   "add_pointer_t",
-									   "aligned_storage",
-									   "aligned_union",
-									   "decay",
-									   "remove_cvref",
-									   "enable_if",
-									   "conditional",
-									   "common_type",
-									   "underlying_type",
-									   "result_of",
-									   "result_of<F(ArgTypes...)>",
-									   "invoke_result",
-									   "aligned_storage_t",
-									   "aligned_union_t",
-									   "decay_t",
-									   "remove_cvref_t",
-									   "enable_if_t", 
-									   "conditional_t",
-									   "common_type_t",
-									   "underlying_type_t",
-									   "result_of_t",
-									   "invoke_result_t",
-									   "void_t",
-									   "conjunction",
-									   "disjunction",
-									   "negation",
-									   "is_void_v",
-									   "is_null_pointer_v",
-									   "is_integral_v",
-									   "is_floating_point_v",
-									   "is_array_v",
-									   "is_pointer_v",
-									   "is_lvalue_reference_v",
-									   "is_rvalue_reference_v",
-									   "is_member_object_pointer_v",
-									   "is_member_function_pointer_v",
-									   "is_enum_v",
-									   "is_union_v",
-									   "is_class_v",
-									   "is_function_v",
-									   "is_reference_v",
-									   "is_arithmetic_v",
-									   "is_fundamental_v",
-									   "is_object_v",
-									   "is_scalar_v",
-									   "is_compound_v",
-									   "is_member_pointer_v",
-									   "is_const_v",
-									   "is_volatile_v",
-									   "is_trivial_v",
-									   "is_trivially_copyable_v",
-									   "is_standard_layout_v",
-									   "is_pod_v",
-									   "is_empty_v",					   
-									   "is_polymorphic_v",
-									   "is_abstract_v",				
-									   "is_final_v",
-									   "is_aggregate_v",
-									   "is_signed_v",
-									   "is_unsigned_v",
-									   "is_constructible_v",
-									   "is_default_constructible_v",
-									   "is_copy_constructible_v",
-									   "is_move_constructible_v",
-									   "is_assignable_v",
-									   "is_copy_assignable_v",
-									   "is_move_assignable_v",
-									   "is_swappable_with_v",
-									   "is_swappable_v",
-									   "is_destructible_v",
-									   "is_trivially_constructible_v",
-									   "is_trivially_default_constructible_v",
-									   "is_trivially_copy_constructible_v",
-									   "is_trivially_move_constructible_v",
-									   "is_trivially_assignable_v",
-									   "is_trivially_copy_assignable_v",
-									   "is_trivially_move_assignable_v",
-									   "is_trivially_destructible_v",
-									   "is_nothrow_constructible_v",
-									   "is_nothrow_default_constructible_v",
-									   "is_nothrow_copy_constructible_v",
-									   "is_nothrow_move_constructible_v",
-									   "is_nothrow_assignable_v",
-									   "is_nothrow_copy_assignable_v",
-									   "is_nothrow_move_assignable_v",
-									   "is_nothrow_swappable_with_v",
-									   "is_nothrow_swappable_v",
-									   "is_nothrow_destructible_v",
-									   "has_virtual_destructor_v",
-									   "has_unique_object_representations_v",
-									   "alignment_of_v",
-									   "rank_v",
-									   "extent_v",
-									   "is_same_v",
-									   "is_base_of_v",
-									   "is_convertible_v",
-									   "is_invocable_v",
-									   "is_invocable_r_v",
-									   "is_nothrow_invocable_v",
-									   "is_nothrow_invocable_r_v",
-									   "conjunction_v",
-									   "disjunction_v",
-									   "negation_v"	   									   									   
-									   };
- 
- std::vector<std::string> PrimitiveTypes =   {"short",
-											  "short int",
-											  "signed short",
-											  "signed short int",
-											  "unsigned short",
-											  "unsigned short int",
-											  "int",
-											  "signed",
-											  "signed int",
-											  "unsigned",
-											  "unsigned int",
-											  "long",
-											  "long long", 
-											  "long int",
-											  "signed long",
-											  "signed long int",
-											  "unsigned long",
-											  "unsigned long int",
-											  "long long",
-											  "long long int",
-											  "signed long long",
-											  "signed long long int",
-											  "unsigned long long",
-											  "unsigned long long int",
-											  "float",
-											  "double",
-											  "long double",
-											  "char",
-											  "signed char",
-											  "unsigned char",
-											  "wchar_t",
-											  "char16_t",
-											  "char32_t",
-											  "string",
-											  "std::string",
-											  "void",
-											  "nullptr_t",
-											  "std::nullptr_t",
-											  "nullptr",
-											  "bool",
-											  "true",
-											  "false"
-											 };
-											 
- std::vector<std::string> CombinatorOrPreludeNames = { "const_",
-													   "id",
-													   "S",
-													   "fix",
-													   "compose",
-													   "cons",
-													   "dollar",
-													   "flip",
-													   "foldl",
-													   "foldr",
-													   "get",
-													   "if_",
-													   "map",
-													   "fmap_tree"
-													 };
-											 
-
-// Create a Function is type traits that accepts a string, loops through
-// the array above and returns true. 
-bool isFromTypeTraits(std::string name) {
-	std::size_t found = name.find_last_of("::");
-	std::string modName = name.substr(0, found - 1);
-	for (unsigned int i = 0; i < TypeTraits.size(); ++i) {
-		if (name == TypeTraits[i] || modName == TypeTraits[i])
-			return true;
-	}
-	return false;
-}
-
-bool isAPrimitiveType(std::string name) {										
-	for (unsigned int i = 0; i < PrimitiveTypes.size(); ++i) {
-		if (name == PrimitiveTypes[i])
-			return true;
-	}
-	return false;
-}
-
-bool isACombinatorOrPrelude(std::string name) {										
-	for (unsigned int i = 0; i < CombinatorOrPreludeNames.size(); ++i) {
-		if (name == CombinatorOrPreludeNames[i])
-			return true;
-	}
-	return false;
-}
 
 
 
