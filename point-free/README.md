@@ -10,6 +10,6 @@ Note: The CMakeLists.txt file may be older than the one checked out with extra, 
 
 Note: As long as EH and RTTI are enabled it should compile, for example the following command also works: cmake ../llvm -DLLVM_ENABLE_RTTI:BOOL=TRUE -DLLVM_ENABLE_EH:BOOL=TRUE -DLLVM_USE_LINKER=gold -DCMAKE_INSTALL_PREFIX=$NEW_LLVM/install -DCMAKE_BUILD_TYPE=Release
 
-4) Then after all configuartion files have compiled: make point-free
+4) Then after all configuration files have compiled: make point-free
 
 
