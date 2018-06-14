@@ -8,7 +8,6 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_clang_tool(point-free
- ClangFormatHelpers/ClangFormatHelpers.cpp
  PointFree.cpp
 )
 

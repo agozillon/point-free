@@ -21,29 +21,6 @@ public:
 	std::string name;
 };
 
-class PCons : public Pattern {
-public:
-	PCons() {}
-	PCons(Pattern* p1, Pattern* p2) { pat1 = p1; pat2 = p2; }
-	~PCons() { delete pat1;  delete pat2; }
-
-	Pattern* pat1,* pat2;
-};
-
-class PTuple : public Pattern {
-public:
-	PTuple() {}
-	PTuple(Pattern* p1, Pattern* p2) { pat1 = p1; pat2 = p2; }
-	~PTuple() { delete pat1; delete pat2; }
-
-	Pattern* pat1,* pat2;
-};
-
-enum Fixity {
-	Prefix,
-	Infix
-};
-
 class CExpr {
 public:
 	virtual ~CExpr() {}
@@ -51,23 +28,12 @@ public:
 	std::string curtainsWrapper;
 };
 
-class CDecl {
-public:
-	CDecl() {}
-	CDecl(std::string n, CExpr* dE) { declName = n; declExpr = dE; }
-	~CDecl() { delete declExpr; }
-
-	std::string declName;
-	CExpr* declExpr;
-};
-
 class Var : public CExpr {
 public:
-	Var(Fixity f, std::string n) { fix = f; name = n; }
+	Var(std::string n) { name = n; }
 	Var() {}
 	virtual ~Var() {}
 
-	Fixity fix;
 	std::string name;
 };
 
@@ -90,19 +56,10 @@ public:
 	CExpr* exprL,* exprR;
 };
 
-class Let : public CExpr {
-public:
-	Let(std::vector<CDecl> d, CExpr* e) { decl = d; expr = e; }
-	Let() {}
-	virtual ~Let() { delete expr; }
-
-	std::vector<CDecl> decl;
-	CExpr* expr;
-};
-
 ////////////////////////////////////////////////////////////////////////
 /* Helpers 								  							  */
 ////////////////////////////////////////////////////////////////////////
+
 void Print(Pattern* p) {
 	if (p == nullptr)
 		std::cout << "nullptr error \n";
@@ -117,7 +74,7 @@ void Print(CExpr* expr) {
 		std::cout << "nullptr error \n";
 	
 	if (Var* var = dynamic_cast<Var*>(expr)) {				 
-		std::cout << " (Var " << ((var->fix == Fixity::Infix) ? "Infix " : "Prefix ") << var->name << ")";
+		std::cout << " (Var " << var->name << ")";
 	}
 	
 	if (App* app = dynamic_cast<App*>(expr)) {
@@ -135,17 +92,6 @@ void Print(CExpr* expr) {
 	}
 }	
 
-
-bool CheckVarForCurtains(Var* expr) {
-	errs() << "I enter \n";
-	if(expr != nullptr) {
-		if (expr->name == "quote" || expr->name == "quote_c" || expr->name == "eval") 
-			return true;
-	}
-	
-	return false;
-}
-	
 void ConvertNonTypesToMetafunctions(CExpr* expr) {
 	if (Var* var = dynamic_cast<Var*>(expr)) {
 		if (var->name == "*")
@@ -159,24 +105,19 @@ void ConvertNonTypesToMetafunctions(CExpr* expr) {
 
 	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
 		ConvertNonTypesToMetafunctions(lambda->expr);
-		
+				
 		// not sure if I want to swap these to meta-functions 
-		if (PVar* pVar = dynamic_cast<PVar*>(lambda->pat)) {/*pVar->name*/}
-
-		if (PTuple* pTup = dynamic_cast<PTuple*>(lambda->pat)) {}
-
-		if (PCons* pCons = dynamic_cast<PCons*>(lambda->pat)) {}
+		// if (PVar* pVar = dynamic_cast<PVar*>(lambda->pat)) {/*pVar->name*/}
 	}
 }
 
 
 void Shuffle(CExpr* expr) {
-	if (Var* var = dynamic_cast<Var*>(expr)) {}
+	// if (Var* var = dynamic_cast<Var*>(expr)) {}
 
 	if (App* app = dynamic_cast<App*>(expr)) {
 		if (Var* var = dynamic_cast<Var*>(app->exprR)) {
 			if(var->name == "add_pointer_t") {
-				CExpr* temp = var; 
 				app->exprR = app->exprL;
 				app->exprL = var; 
 			}	
@@ -566,36 +507,6 @@ std::vector<std::string> AlphaPat(Pattern* pat, std::map<std::string, std::stack
 		pVar->name = newName;
 	}
 	
-	// alphaPat(PTuple p1 p2) = liftM2 PTuple(alphaPat p1) (alphaPat p2)
-	if (PTuple* pTup = dynamic_cast<PTuple*>(pat)) {
-		tempList = AlphaPat(pTup->pat1, env);
-		
-		for (size_t i = 0; i < tempList.size(); i++) {
-			nameList.push_back(tempList[i]);
-		}
-
-		tempList = AlphaPat(pTup->pat2, env);
-		
-		for (size_t i = 0; i < tempList.size(); i++) {
-			nameList.push_back(tempList[i]);
-		}
-	}
-
-	// alphaPat(PCons p1 p2) = liftM2 PCons(alphaPat p1) (alphaPat p2)
-	if (PCons* pCons = dynamic_cast<PCons*>(pat)) {
-		tempList = AlphaPat(pCons->pat1, env);
-		
-		for (size_t i = 0; i < tempList.size(); i++) {
-			nameList.push_back(tempList[i]);
-		}
-		
-		tempList = AlphaPat(pCons->pat2, env);
-
-		for (size_t i = 0; i < tempList.size(); i++) {
-			nameList.push_back(tempList[i]);
-		}
-	}
-
 	return nameList;
 }
 
@@ -626,11 +537,6 @@ void Alpha(CExpr* expr, std::map<std::string, std::stack<std::string>>& env) {
 		}
 
 	}
-
-	// alpha(Let _ _) = assert False bt, everything should be broken into a lambda at this point 
-	//if (Let* let = dynamic_cast<Let*>(expr)) {
-	//	assert(false);
-	//}
 }
 
 void AlphaRename(CExpr* expr) {
@@ -651,43 +557,17 @@ void gatherNames(CExpr* expr, std::vector<std::string>& names) {
 	if (App* app = dynamic_cast<App*>(expr)) {
 		gatherNames(app->exprL, names);
 		gatherNames(app->exprR, names);
-	}
-	
-	if (Let* let = dynamic_cast<Let*>(expr)) {
-		for (auto& decl : let->decl) {
-			names.push_back(decl.declName);
-			gatherNames(decl.declExpr, names);
-		}
-
-		gatherNames(let->expr, names);
-	}
+	}	
 }
 
 bool occursInPattern(std::string name, Pattern* p) {
 	bool ret = false;
-	if (PTuple* pTup = dynamic_cast<PTuple*>(p)) {
-		ret = (occursInPattern(name, pTup->pat1) ||
-				occursInPattern(name, pTup->pat2));
-	}
-
-	if (PCons* pCons = dynamic_cast<PCons*>(p)) {
-		ret = (occursInPattern(name, pCons->pat1) || 
-				occursInPattern(name, pCons->pat2));
-	}
 
 	if (PVar* pVar = dynamic_cast<PVar*>(p)) {
 		ret = (pVar->name == name);
 	}
 
 	return ret;
-}
-
-bool occursInDeclList(std::string name, std::vector<CDecl> declList) {
-	for (auto val : declList) {
-		if (val.declName == name)
-			return true;
-	}
-	return false;
 }
 
 int freeIn(std::string name, CExpr* expr) {
@@ -708,17 +588,6 @@ int freeIn(std::string name, CExpr* expr) {
 		ret = freeIn(name, app->exprL) + freeIn(name, app->exprR);
 	}
 
-	if (Let* let = dynamic_cast<Let*>(expr)) {
-		if (occursInDeclList(name, let->decl)) {
-			ret = 0;
-		} else {
-			ret = freeIn(name, let->expr);
-			for (auto var : let->decl) {
-				ret += freeIn(name, var.declExpr);
-			}
-		}
-	}
-
 	return ret;
 }
 
@@ -730,11 +599,10 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 	if (Var* var = dynamic_cast<Var*>(expr)) {
 		if (name == var->name) {
 			delete var;
-			return new Var(Prefix, "id");
+			return new Var("id");
 		} else {					
-			return new App(new Var(Prefix, "const_"), var);
+			return new App(new Var("const_"), var);
 		}
-
 	}
 
 	if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
@@ -746,10 +614,6 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 		return expr; // should never actually occur
 	}
 
-	//if (Let* let = dynamic_cast<Let*>(expr)) {
-	//	assert(false);
-	//}
-
 	if (App* app = dynamic_cast<App*>(expr)) {
 		bool frL = isFreeIn(name, app->exprL);
 		bool frR = isFreeIn(name, app->exprR);
@@ -759,12 +623,12 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 		if (frL && frR) {
 			app->exprL = RemoveVariable(name, names, app->exprL);
 			app->exprR = RemoveVariable(name, names, app->exprR);
-			temp = new App(new App(new Var(Prefix, "S"), app->exprL), app->exprR); // S combinator, instead of Haskell's ap monad 
+			temp = new App(new App(new Var("S"), app->exprL), app->exprR); // S combinator, instead of Haskell's ap monad 
 			app->exprL = nullptr; app->exprR = nullptr; delete app;
 			return temp;
 		} else if (frL) {
 			app->exprL = RemoveVariable(name, names, app->exprL);
-			temp = new App(new App(new Var(Prefix, "flip"), app->exprL), app->exprR);
+			temp = new App(new App(new Var("flip"), app->exprL), app->exprR);
 			app->exprL = nullptr; app->exprR = nullptr; delete app;
 			return temp;
 		} else if (vR && vR->name == name) {
@@ -772,11 +636,11 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 			return app->exprL;
 		} else if (frR) {
 			app->exprR = RemoveVariable(name, names, app->exprR);
-			temp = new App(new App(new Var(Infix, "compose"), app->exprL), app->exprR); // the compose metafunction instead of Haskell .
+			temp = new App(new App(new Var("compose"), app->exprL), app->exprR); // the compose metafunction instead of Haskell .
 			app->exprL = nullptr; app->exprR = nullptr; delete app;
 			return temp;
 		} else {
-			return new App(new Var(Prefix, "const_"), app); // the const_ metafunction instead of haskell const (const is also a reserved word in C++)
+			return new App(new Var("const_"), app); // the const_ metafunction instead of haskell const (const is also a reserved word in C++)
 		}
 	}
 	
@@ -784,12 +648,8 @@ CExpr* RemoveVariable(std::string name, std::vector<std::string> names, CExpr* e
 }
 
 CExpr* TransformRecursive(CExpr* expr, std::vector<std::string> names) {
-	//if (Let* let = dynamic_cast<Let*>(expr)) {
-	//	assert(false);
-	//}
-
 	if (Var* var = dynamic_cast<Var*>(expr)) {
-		return expr;
+		return var;
 	}
 
 	if (App* app = dynamic_cast<App*>(expr)) {
@@ -802,32 +662,6 @@ CExpr* TransformRecursive(CExpr* expr, std::vector<std::string> names) {
 		if (PVar* pVar = dynamic_cast<PVar*>(lambda->pat)) {
 			return TransformRecursive(RemoveVariable(pVar->name, names, lambda->expr), names);
 		}
-
-		if (PTuple* pTup = dynamic_cast<PTuple*>(lambda->pat)) {
-			std::string newName = fresh(names);
-			CExpr* f = new App(new Var(Prefix, "fst"), new Var(Prefix, newName));
-			CExpr* s = new App(new Var(Prefix, "snd"), new Var(Prefix, newName));
-			CLambda* temp = new CLambda(new PVar(newName), new App(new CLambda(pTup->pat1, new CLambda(pTup->pat2, lambda->expr)), new App(f, s)));
-
-			// NEED TO BE SURE VARIABLES ARE CLEANED APPROPRIATELY
-			lambda->pat = nullptr;
-			lambda->expr = nullptr;
-			delete lambda;
-			return temp;
-		}
-
-		if (PCons* pCons = dynamic_cast<PCons*>(lambda->pat)) {
-			std::string newName = fresh(names);
-			CExpr* f = new App(new Var(Prefix, "head"), new Var(Prefix, newName));
-			CExpr* s = new App(new Var(Prefix, "tail"), new Var(Prefix, newName));
-			CLambda* temp = new CLambda(new PVar(newName), new App(new CLambda(pCons->pat1, new CLambda(pCons->pat2, lambda->expr)), new App(f, s)));
-			
-			// NEED TO BE SURE VARIABLES ARE CLEANED APPROPRIATELY
-			lambda->pat = nullptr;
-			lambda->expr = nullptr;
-			delete lambda;
-			return temp;
-		}
 	}
 	
 	return nullptr;
@@ -838,8 +672,6 @@ CExpr* Transform(CExpr* expr) {
 	gatherNames(expr, nameList);
 	ConvertNonTypesToMetafunctions(expr);
 	Shuffle(expr);
-	//Print(expr);
-	//std::cout << "Print ended /n";
 	return TransformRecursive(expr, nameList);
 }
 
