@@ -101,7 +101,6 @@ private:
 		
 		if (auto* sope = dyn_cast<SizeOfPackExpr>(e))
 		{
-			// can getPack() return something like a template?
 			return new App(new Var(Prefix, "sizeof..."), new Var(Prefix, "..." + sope->getPack()->getNameAsString()));	
 		}
 		
@@ -228,9 +227,6 @@ private:
 		}
 
 		if (auto* tad = dyn_cast<TypeAliasDecl>(d)) {	
-			
-			errs() << "\n \n !!!!!Printing Qualified String!!!!! \n \n" << tad->getQualifiedNameAsString() << "\n \n !!!!!Printing Qualified String!!!!! \n \n";
-			
 			return TransformToCExpr(tad->getUnderlyingType().getTypePtr());
 		}	
 
@@ -258,7 +254,6 @@ private:
 			return TransformToCExpr(tatd->getTemplatedDecl());
 		}
 		
-		
 		if (auto* td = dyn_cast<TypedefDecl>(d)) {
 			return TransformToCExpr(td->getUnderlyingType().getTypePtr());		
 		}
@@ -269,13 +264,11 @@ private:
 		}
 		
 		if (auto* fd = dyn_cast<FieldDecl>(d)) {
-		 
 		  if (fd->hasInClassInitializer())
 			  return TransformToCExpr(fd->getInClassInitializer()); 			
 		}
 			
 		if (auto* crd = dyn_cast<CXXRecordDecl>(d)) { 
-			errs() << "this CXXRecordDecl node could be a problem \n";
 			if (std::get<0>(QualifierNameStack.top()) == ""
 			 && std::get<1>(QualifierNameStack.top()) == "") {
 				return new Var(Prefix, crd->getNameAsString()); 
@@ -423,15 +416,9 @@ private:
 					expr = TransformToCExpr((*i).getAsExpr());
 			    }
 				
-				if ((*i).getKind() == TemplateArgument::ArgKind::Template) {
-												
+				if ((*i).getKind() == TemplateArgument::ArgKind::Template) {							
 					auto* ctd = dyn_cast<ClassTemplateDecl>((*i).getAsTemplate().getAsTemplateDecl());
 					
-					// The issue with the below is that it will check the template in depth and consider it a lambda
-					// which isn't always what we wish to do.
-					// 1) GOES INTO FOLDR_C is this what we want? Could be...
-					// 2) I might also have to remove the quote_c calls when i find them, as I'm not sure if it changes the meaning of the program?
-					// 3) Is there a way to make it automatically look for ::type when finding a quote_c instead of having this if statement
 					if (ctd != nullptr && 
 						tst->getTemplateName().getAsTemplateDecl()->getName() == "quote_c" && 
 						ctd->isThisDeclarationADefinition()) {
@@ -482,7 +469,7 @@ private:
 		
 		return nullptr;
 	} 
-	
+		
 	CExpr* RemoveCurtainsFromCExpr(CExpr* expr) {
 		if (expr == nullptr)
 			return nullptr;
@@ -490,14 +477,20 @@ private:
 		if (Var* var = dynamic_cast<Var*>(expr)) {}
 		
 		if (App* app = dynamic_cast<App*>(expr)) {
-			if (Var* var = dynamic_cast<Var*>(app->exprL)) {					
+			if (Var* exprL = dynamic_cast<Var*>(app->exprL)) {					
 				// remove quote/quote_c/eval				
-				if (var->name == "quote" || var->name == "quote_c" || var->name == "eval") {
+				if (exprL->name == "quote" || exprL->name == "quote_c" || exprL->name == "eval") {
+					// Unsure if this is enough, you can have quotes around Lambdas for instance  
+			 		if (Var* var = dynamic_cast<Var*>(app->exprR)) {
+						var->curtainsWrapper = exprL->name;	
+					}
+				
 					CExpr* temp = RemoveCurtainsFromCExpr(app->exprR);
+				
 					// delete parent node and left node, retain right node. 
 					app->exprR = nullptr; 
-					delete app;
-					return temp; 
+					delete app;	
+					return temp;	
 				}
 			} else {
 				app->exprL = RemoveCurtainsFromCExpr(app->exprL); 
@@ -506,25 +499,10 @@ private:
 		}
 	
 		if (CLambda* lambda = dynamic_cast<CLambda*>(expr)) {
-			// RemoveCurtainsFromCExpr(lambda->pat); // We shouldn't have to deal with patterns
 			lambda->expr = RemoveCurtainsFromCExpr(lambda->expr);
 		}
 		
 		return expr;
-	}
-	
-	
-	std::string ConvertCExprToCurtains(Pattern* p) {
-		std::string ret = "";
-		
-		if (p == nullptr)
-			ret += "nullptr error";
-
-		if (PVar* pVar = dynamic_cast<PVar*>(p)) {
-			ret += " (PVar " + pVar->name + ")";
-		}
-		
-		return ret;
 	}
 	
   	std::string ConvertCExprToCurtains(CExpr* expr) {
@@ -533,9 +511,7 @@ private:
 		if (expr == nullptr)
 			ret += "nullptr error";
 		
-		// (var->fix == Fixity::Infix), need to use this for logic
-		// need a function for this
-		if (Var* var = dynamic_cast<Var*>(expr)) {				 	
+		if (Var* var = dynamic_cast<Var*>(expr)) {				 						
 			if (isFromTypeTraits(var->name)) {
 				std::size_t found = var->name.find_last_of("::");
 				
@@ -550,13 +526,16 @@ private:
 				}
 				
 			} else { 		
-				if (isAPrimitiveType(var->name) 
-				 || isACombinatorOrPrelude(var->name)) { // is an int, float etc.
+				if (isAPrimitiveType(var->name) // is an int, float etc.
+				 || isACombinatorOrPrelude(var->name)) { // part of curtains
 					ret += var->name;	
 				} else {
-					// I don't look for ::v, ::t in this case as these should be user specified metafunctions that 
-					// we can simplify and make point-free (so no need to use quote_c or state there is an error).
-					ret += "quote<" + var->name + ">"; 
+					if (var->curtainsWrapper == "quote_c")
+						ret += "quote_c<" + var->name + ">"; 
+					else if (var->curtainsWrapper == "quote")
+						ret += "quote<" + var->name + ">"; 
+					else
+						ret += "quote<" + var->name + ">"; 
 				}			
 			}
 		}

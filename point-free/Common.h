@@ -47,6 +47,8 @@ enum Fixity {
 class CExpr {
 public:
 	virtual ~CExpr() {}
+	
+	std::string curtainsWrapper;
 };
 
 class CDecl {
@@ -132,6 +134,17 @@ void Print(CExpr* expr) {
 		std::cout << ")";
 	}
 }	
+
+
+bool CheckVarForCurtains(Var* expr) {
+	errs() << "I enter \n";
+	if(expr != nullptr) {
+		if (expr->name == "quote" || expr->name == "quote_c" || expr->name == "eval") 
+			return true;
+	}
+	
+	return false;
+}
 	
 void ConvertNonTypesToMetafunctions(CExpr* expr) {
 	if (Var* var = dynamic_cast<Var*>(expr)) {
