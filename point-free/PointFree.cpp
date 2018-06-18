@@ -27,17 +27,26 @@ using namespace clang::driver;
 using namespace clang::tooling;
 using namespace llvm;
 
-// options
+// A help message for this specific tool can be added afterwards.
+static cl::extrahelp MoreHelp("\n-structorclass <structure or class name> used to specify the class to search for the type alias or definition you have specified. \n \n-typealiasordef <type alias or type definition> used to specify the type to search for within the specified class, this type in conjunction with the class you specified will be made into a point-free metafunction. \n");
 
-static cl::opt<std::string> StructureName(
-	"structure",cl::init(""),
-	cl::desc("The Structure you wish to be made point free"));
+
+// CommonOptionsParser declares HelpMessage with a description of the common
+// command-line options related to the compilation database and input files.
+// It's nice to have this help message in all tools.
+static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
+
+// options
+static cl::opt<std::string> StructOrClassName(
+	"structorclass",cl::init(""),
+	cl::desc("The template structure or class you wish to be made point free"));
 
 static cl::opt<std::string> TypeAliasOrDefName(
 	"typealiasordef",cl::init(""),
 	cl::desc("The name of the using or type alias in the class you wish to convert"));
 	
 Rewriter rewriter;
+bool foundStruct = false;
 std::stack<std::pair<std::string, std::string>> QualifierNameStack;
 	
 class PointFreeVisitor : public RecursiveASTVisitor<PointFreeVisitor> {
@@ -544,7 +553,8 @@ public:
     // however I imagine this will pick up templated functions as well
     // as classes. 
     virtual bool VisitClassTemplateDecl(ClassTemplateDecl* ctd) { 		
-		if (ctd->getNameAsString() == StructureName) { 		    	
+		if (ctd->getNameAsString() == StructOrClassName) {
+			foundStruct = true; 		    	
 			auto topCopy = std::make_pair(std::get<0>(QualifierNameStack.top()), std::get<1>(QualifierNameStack.top()));
 			std::cout << "\n";
 	    	std::cout << "ClassTemplateDecl Converted To CExpr: \n";
@@ -564,7 +574,8 @@ public:
     }
    		
     virtual bool VisitClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl* ctsd) {
-		if (ctsd->getNameAsString() == StructureName) { 
+		if (ctsd->getNameAsString() == StructOrClassName) { 
+			foundStruct = true;
 			auto topCopy = std::make_pair(std::get<0>(QualifierNameStack.top()), std::get<1>(QualifierNameStack.top()));
 			std::cout << "\n";
 			CExpr* expr = TransformToCExpr(ctsd);
@@ -619,29 +630,35 @@ public:
 
 
 int main(int argc, const char **argv) {
-	
     // parse the command-line args passed to your code
     cl::OptionCategory PointFreeCategory("Point Free Tool Options");
+   
+    TypeAliasOrDefName.setCategory(PointFreeCategory);
+	StructOrClassName.setCategory(PointFreeCategory);
+    
     CommonOptionsParser op(argc, argv, PointFreeCategory);        
 
-    if(!StructureName.size()) {
-		errs() << "No structure name stated for conversion, exiting without converting \n"; 
+    if(!StructOrClassName.size()) {
+		errs() << "No structure or class name stated for conversion, exiting without converting \n"; 
 		return -1;
 	}
 	    
     QualifierNameStack.push(std::make_pair(std::string(""), std::string("")));
     if(!TypeAliasOrDefName.size()) {
 		errs() << "Type Alias or TypeDef name not stated, assuming name is: type \n"; 
-		QualifierNameStack.push(std::make_pair(std::string(StructureName), std::string("type")));
+		QualifierNameStack.push(std::make_pair(std::string(StructOrClassName), std::string("type")));
 	} else {
-		QualifierNameStack.push(std::make_pair(std::string(StructureName), std::string(TypeAliasOrDefName)));
+		QualifierNameStack.push(std::make_pair(std::string(StructOrClassName), std::string(TypeAliasOrDefName)));
 	}
-    
+
     // create a new Clang Tool instance (a LibTooling environment)
     ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
     // run the Clang Tool, creating a new FrontendAction (explained below)
     int result = Tool.run(newFrontendActionFactory<PointFreeFrontendAction>().get());
+      
+    if (!foundStruct)
+		errs() << "Could not find requested class or structure for conversion \n";
       
     return result;
 }
