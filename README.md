@@ -1,4 +1,4 @@
-# Point-Free Libtool - Read Me # 
+# Point-Free Libtool # 
 
 Copyright (c) 2018 Andrew Gozillon & Paul Keir, University of the West of Scotland.
 
