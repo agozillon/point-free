@@ -1,3 +1,4 @@
+// Copyright (c) 2018 Andrew Gozillon & Paul Keir, University of the West of Scotland.
 #include "clang/Driver/Options.h"
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTContext.h"

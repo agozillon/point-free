@@ -1,3 +1,4 @@
+// Copyright (c) 2018 Andrew Gozillon & Paul Keir, University of the West of Scotland.
 #pragma once
 #include <string>
 #include <vector>
