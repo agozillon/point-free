@@ -27,18 +27,14 @@ For example, we have the following template metafunction that can be used to per
 ```
 template <class F, class V, class XS>
 struct fldl {
-
   template <class X, class G>
   struct s1 {
-  
     template <class A>
     struct s2 {
       using type = eval<G,eval<F,A,X>>;
     };
-	
     using type = curtains::quote_c<s2>;
   };
-  
   using type = eval<foldr, curtains::quote_c<s1>,id,XS,V>;
 };
 ```
