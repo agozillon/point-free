@@ -45,7 +45,7 @@ This can be condensed into a one line nameless point-free metafunction using the
 eval<eval<compose,flip>,eval<eval<flip,eval<eval<compose,quote_c<foldr_c>>,eval<eval<compose,eval<compose,eval<flip,compose>>>,flip>>>,quote<id_t>>>;
 ```
 
-All it takes to invoke this is to apply another eval operation with the required number of arguments. However, this is clearly not easy to write by hand and that's where the Point-Free Libtool comes in, you can invoke the tool on the above example and attain the same result (in actuallity the above example could be made more concise, there are more eval operations than neccessary).   
+All it takes to invoke this is to apply another eval operation with the required number of arguments. However, this is clearly not easy to write by hand and that's where the Point-Free Libtool comes in, you can invoke the tool on the above example and attain the same result (in actuality the above example could be made more concise, there are more eval operations than necessary).   
 
 ## How to compile it 
 
@@ -66,7 +66,7 @@ instead of:
 make clang
 ```
 
-It is notable that as this tool is a Libtool it's possible that it may have some minor inconsistinces with later versions of Clang (Clang 6.0 should work), these differences should be small and will manifest as errors during compilation. If any are found feel free to email: andrew.gozillon@uws.ac.uk or submit a pull request if you fix them yourself!
+It is notable that as this tool is a Libtool it's possible that it may have some minor inconsistency with later versions of Clang (Clang 6.0 should work), these differences should be small and will manifest as errors during compilation. If any are found feel free to email: andrew.gozillon@uws.ac.uk or submit a pull request if you fix them yourself!
 
 ## How to use it 
 
@@ -74,11 +74,11 @@ Using the tool is relatively simple and is done through the command line, an exa
 ```  
 point-free TemplateTest.cpp -structorclass=fldl -typealiasordef=type -- -std=c++17 -I ~/projects/curtains
 ```
-The first argument to the point-free executeable is the source code the template you wish to convert is contained in. The second argument is the name of the template structure or class that you wish converted. The third argument is the type alias or type definition you wish converted within the template, this defaults to "type" if no argument is given. Everything following "--" is arguments directed towards the Clang compiler rather than the tool itself, in this case we've elected to set the standard and pass the Curtains library to it. Once the command has been entered the result of the conversion will be printed to screen. 
+The first argument to the point-free executable is the source code the template you wish to convert is contained in. The second argument is the name of the template structure or class that you wish converted. The third argument is the type alias or type definition you wish converted within the template, this defaults to "type" if no argument is given. Everything following "--" are arguments directed towards the Clang compiler rather than the tool itself, in this case we've elected to set the standard and pass the Curtains library to it. Once the command has been entered the result of the conversion will be printed to screen. 
 
 ## Links 
 
 Curtains API Repository:
  
-Test File Repository:
+Test File Repository: https://github.com/agozillon/point-free_tests
  
