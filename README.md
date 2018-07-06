@@ -26,11 +26,14 @@ For example, we have the following template metafunction that can be used to per
 
 ```
 template <class F, class V, class XS>
-struct fldl {
+struct fldl 
+{
   template <class X, class G>
-  struct s1 {
+  struct s1 
+  {
     template <class A>
-    struct s2 {
+    struct s2 
+	{
       using type = eval<G,eval<F,A,X>>;
     };
     using type = curtains::quote_c<s2>;
@@ -41,7 +44,9 @@ struct fldl {
 
 This can be condensed into a one line nameless point-free metafunction using the Curtains library, which can then be used similarly to a lambda:    
 
+```
 eval<eval<compose,flip>,eval<eval<flip,eval<eval<compose,quote_c<foldr_c>>,eval<eval<compose,eval<compose,eval<flip,compose>>>,flip>>>,quote<id_t>>>;
+```
 
 All it takes to invoke this is to apply another eval operation with the required number of arguments. However, this is clearly not easy to write by hand and that's where the Point-Free Libtool comes in, you can invoke the tool on the above example and attain the same result (in actuallity the above example could be made more concise, there are more eval operations than neccessary).   
 
@@ -76,6 +81,7 @@ The first argument to the point-free executeable is the source code the template
 
 ## Links 
 
-Curtains API Repository: 
+Curtains API Repository:
+ 
 Test File Repository:
  
