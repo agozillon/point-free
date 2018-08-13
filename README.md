@@ -41,7 +41,7 @@ struct First { using type = T; };
 Should the `First` definition exist within a file called TemplateTest.cpp, the following invocation of the Point-Free libtool will output `const_` - being an elementary MFC analogue of the Haskell `const` within the Curtains library:
 
 ```
-$ point-free TemplateTest.cpp -structorclass=First -typealiasordef=type -- -std=c++17 -I ~/projects/curtains
+$ point-free TemplateTest.cpp -classname=First -membername=type -- -std=c++17 -I ~/projects/curtains
 const_
 ```
 
@@ -62,7 +62,7 @@ struct Second { using type = U; };
 So, with the `Second` class template definition above, also located within TemplateTest.cpp, the following invocation will produce the expected result:
 
 ```
-$ point-free TemplateTest.cpp -structorclass=Second -typealiasordef=type -- -std=c++17 -I ~/projects/curtains
+$ point-free TemplateTest.cpp -classname=Second -membername=type -- -std=c++17 -I ~/projects/curtains
 eval<const_,id>
 ```
 

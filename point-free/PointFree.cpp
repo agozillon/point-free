@@ -38,12 +38,12 @@ static cl::extrahelp MoreHelp("\n-structorclass <structure or class name> used t
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 
 // options
-static cl::opt<std::string> StructOrClassName(
-	"structorclass",cl::init(""),
+static cl::opt<std::string> ClassName(
+	"classname",cl::init(""),
 	cl::desc("The template structure or class you wish to be made point free"));
 
-static cl::opt<std::string> TypeAliasOrDefName(
-	"typealiasordef",cl::init(""),
+static cl::opt<std::string> MemberName(
+	"membername",cl::init(""),
 	cl::desc("The name of the using or type alias in the class you wish to convert"));
 	
 Rewriter rewriter;
@@ -554,20 +554,24 @@ public:
     // however I imagine this will pick up templated functions as well
     // as classes. 
     virtual bool VisitClassTemplateDecl(ClassTemplateDecl* ctd) { 		
-		if (ctd->getNameAsString() == StructOrClassName) {
+		if (ctd->getNameAsString() == ClassName) {
 			foundStruct = true; 		    	
 			auto topCopy = std::make_pair(std::get<0>(QualifierNameStack.top()), std::get<1>(QualifierNameStack.top()));
+		/*
+		    // Splits calls up and prints more detailed information for debuging
 			std::cout << "\n";
 	    	std::cout << "ClassTemplateDecl Converted To CExpr: \n";
 			CExpr* expr = TransformToCExpr(ctd);	    	
 	    	Print(expr); 
-		//	std::cout << "\n \n \n Removed Curtains Calls From CExpr: \n";
+			std::cout << "\n \n \n Removed Curtains Calls From CExpr: \n";
 	    	expr = RemoveCurtainsFromCExpr(expr);
-		//	Print(expr); 
+			Print(expr); 
 	    	std::cout << "\n \n \nCExpr After Point Free Conversion: \n";
 	    	expr = PointFree(expr);
 			Print(expr);
-	    	std::cout << "\n \nCurtains Lambda: \n" << ConvertToCurtains(expr) << "\n";
+	    */
+	  
+	    	std::cout << ConvertToCurtains(PointFree(RemoveCurtainsFromCExpr(TransformToCExpr(ctd)))) << "\n";
 			QualifierNameStack.push(topCopy);
 	    }
     				         
@@ -575,20 +579,24 @@ public:
     }
    		
     virtual bool VisitClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl* ctsd) {
-		if (ctsd->getNameAsString() == StructOrClassName) { 
+		if (ctsd->getNameAsString() == ClassName) { 
 			foundStruct = true;
 			auto topCopy = std::make_pair(std::get<0>(QualifierNameStack.top()), std::get<1>(QualifierNameStack.top()));
+	/*
+	        // Splits calls up and prints more detailed information for debuging 
 			std::cout << "\n";
 			CExpr* expr = TransformToCExpr(ctsd);
 	    	std::cout << "ClassTemplateSpecializationDecl Converted To CExpr: \n";
 			Print(expr);
-	//		std::cout << "\n \n \n Removed Curtains Calls From CExpr: \n";
+			std::cout << "\n \n \n Removed Curtains Calls From CExpr: \n";
 			expr = RemoveCurtainsFromCExpr(expr);
-	//		Print(expr);
-			std::cout << "\n \n \nCExpr After Point Free Conversion: \n";
+			Print(expr);
+			std::cout << "\n \n \n CExpr After Point Free Conversion: \n";
 	    	expr = PointFree(expr);
 			Print(expr);
-	    	std::cout << "\n \nCurtains Lambda: \n" << ConvertToCurtains(expr) << "\n \n";
+	    	std::cout << "\n \n Curtains Lambda: \n" << ConvertToCurtains(expr) << "\n \n";
+	*/	
+			std::cout << ConvertToCurtains(PointFree(RemoveCurtainsFromCExpr(TransformToCExpr(ctsd)))) << "\n"; 
 			QualifierNameStack.push(topCopy);
 		}
 
@@ -634,22 +642,22 @@ int main(int argc, const char **argv) {
     // parse the command-line args passed to your code
     cl::OptionCategory PointFreeCategory("Point Free Tool Options");
    
-    TypeAliasOrDefName.setCategory(PointFreeCategory);
-	StructOrClassName.setCategory(PointFreeCategory);
+    MemberName.setCategory(PointFreeCategory);
+	ClassName.setCategory(PointFreeCategory);
     
     CommonOptionsParser op(argc, argv, PointFreeCategory);        
 
-    if(!StructOrClassName.size()) {
+    if(!ClassName.size()) {
 		errs() << "No structure or class name stated for conversion, exiting without converting \n"; 
 		return -1;
 	}
 	    
     QualifierNameStack.push(std::make_pair(std::string(""), std::string("")));
-    if(!TypeAliasOrDefName.size()) {
+    if(!MemberName.size()) {
 		errs() << "Type Alias or TypeDef name not stated, assuming name is: type \n"; 
-		QualifierNameStack.push(std::make_pair(std::string(StructOrClassName), std::string("type")));
+		QualifierNameStack.push(std::make_pair(std::string(ClassName), std::string("type")));
 	} else {
-		QualifierNameStack.push(std::make_pair(std::string(StructOrClassName), std::string(TypeAliasOrDefName)));
+		QualifierNameStack.push(std::make_pair(std::string(ClassName), std::string(MemberName)));
 	}
 
     // create a new Clang Tool instance (a LibTooling environment)
