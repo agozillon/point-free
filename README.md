@@ -4,13 +4,13 @@ Copyright (c) 2018 Andrew Gozillon & Paul Keir, University of the West of Scotla
 
 ## The Tool 
 
-The Point-Free Clang Libtool is a console application that will convert pointful template metafunctions to point-free template metafunction classes (MFC). The output point-free template metafunctions utilise an `m_invoke` typedef member template, which is compatible with the `eval` alias template from the Curtains metaprogramming library. The Curtains library allows implicit currying of MFCs. In some cases the generated MFCs are more concise than the original pointful implementations. The project is inspired by the Haskell **pointfree** tool (http://hackage.haskell.org/package/pointfree).
+The Point-Free Clang Libtool is a console application that will convert pointful template metafunctions to point-free template metafunction classes (MFC). The output point-free template metafunctions utilise an `m_invoke` typedef member template, which is compatible with the `eval` alias template from the Curtains metaprogramming library. The Curtains library allows implicit currying of MFCs. In some cases the generated MFCs are more concise than the original pointful implementations. The project is inspired by the Haskell pointfree tool (http://hackage.haskell.org/package/pointfree).
 
 ## What is a Point-Free function?
 
 Point-Free programming is a style of programming where functions are designed to take no arguments (the opposite would be a pointful function that takes arguments, each parameter a "point"). Instead, functions are created through the composition or partial application of a curated set of higher-order functions or combinators. The final composition of these combinators will still accept the same number of parameters; and manipulate them to produce an identical result. This style of programming, also known as tacit programming, can lead to more concise and equational functions and is encountered in functional programming languages like Haskell.
 
-The following simple example converts a pointful lambda function to a point-free function using the Haskell **pointfree** command-line tool. The result, `const`, assumes that the user has the `const` combinator available to them; though note that **pointfree** uses only a subset of functions from the Haskell prelude.
+The following simple example "converts" a pointful lambda function to a point-free function using the Haskell pointfree command-line tool. The result, `const`, assumes that the user has the `const` combinator available to them; though note that pointfree uses only a subset of functions from the Haskell prelude.
 
 ```
 $ pf \x y -> x
@@ -25,13 +25,13 @@ const id
 ```
 ## Point-Free Template Metaprogramming?
 
-As with the Haskell **pointfree** tool, users of our tool are encouraged to have fun, and explore the point-free idiom; potentially re-using existing metafunction combinators from the Curtains library. 
+As with the *Haskell* pointfree tool, users of our tool are encouraged to have fun, and explore the point-free idiom; potentially re-using existing metafunction combinators from the Curtains library. 
 
 Our Point-Free tool expects the user to provide three things: a file name; the name of a class template (i.e. the metafunction); and the name of the typedef member containing the metafunction result (the name `type` is used by default). By providing the class template within a file, we allow the user to make use of auxiliary classes in the definition in the class template's definition.
 
-Everything following "--" is an argument directed towards the Clang compiler rather than the tool itself. In this case we've elected to set the standard and pass the Curtains library to it.
+Everything following `--` is an argument directed towards the Clang compiler rather than the tool itself. In this case we've elected to set the standard and pass the Curtains library to it.
 
-The following C++ code excert can be compared to the first Haskell example above. Here the *pointful* metafunction class template `First` ``returns'' the first template argument via the `type` member.
+The following C++ code excert can be compared to the first Haskell example above. Here the *pointful* metafunction class template `First` "returns" the first template argument via the `type` member.
 
 ```
 template <class T, class U>
