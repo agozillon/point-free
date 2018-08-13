@@ -43,6 +43,7 @@ Should the `First` definition exist within a file called TemplateTest.cpp, the f
 ```
 $ point-free TemplateTest.cpp -structorclass=First -typealiasordef=type -- -std=c++17 -I ~/projects/curtains
 const_
+```
 
 We are then able to make the following two assertions:
 
