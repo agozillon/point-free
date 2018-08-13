@@ -54,7 +54,7 @@ static_assert(std::is_same_v<First<int,char>::type,eval<const_,int,char>>);
 
 Reproducing the *second* Haskell example will likewise also involve the common `id` combinator. More significantly though, `const id` is a curried expression, and the result makes use of the intrinsic currying offered by the `eval` alias template from the Curtains library.
 
-```
+```C++
 template <class T, class U>
 struct Second { using type = U; };
 ```
@@ -68,39 +68,10 @@ eval<const_,id>
 
 We are then able to make the following two assertions:
 
-```
+```C++
 static_assert(std::is_same_v<Second<int,char>::type,char>);
 static_assert(std::is_same_v<Second<int,char>::type,eval<eval<const_,id>,int,char>>);
 ```
-
-## How Can This Benefit Template Metaprogramming?  
-
-In the case of templates point-free metafunctions can allow for more concise definitions and in some cases the resulting point-free metafunction can be used in lieu of type level lambdas, a feature modern C++ currently does not have (which in itself aids concise code).
-
-For example, we have the following template metafunction that can be used to perform a fold left operation on types (it makes use of some Curtains library features): 
-
-```
-template <class F, class V, class XS>
-struct fldl {
-  template <class X, class G>
-  struct s1 {
-    template <class A>
-    struct s2 {
-      using type = eval<G,eval<F,A,X>>;
-    };
-    using type = curtains::quote_c<s2>;
-  };
-  using type = eval<foldr, curtains::quote_c<s1>,id,XS,V>;
-};
-```
-
-This can be condensed into a one line nameless point-free metafunction using the Curtains library, which can then be used similarly to a lambda:    
-
-```
-eval<eval<compose,flip>,eval<eval<flip,eval<eval<compose,quote_c<foldr_c>>,eval<eval<compose,eval<compose,eval<flip,compose>>>,flip>>>,quote<id_t>>>;
-```
-
-All it takes to invoke this is to apply another eval operation with the required number of arguments. However, this is clearly not easy to write by hand and that's where the Point-Free Libtool comes in, you can invoke the tool on the above example and attain the same result (in actuality the above example could be made more concise, there are more eval operations than necessary).   
 
 ## Building
 
