@@ -77,17 +77,22 @@ static_assert(std::is_same_v<Second<int,char>::type,eval<eval<const_,id>,int,cha
 
 This project needs to be compiled in conjunction with the Clang/LLVM compiler (https://github.com/llvm-mirror/clang & https://github.com/llvm-mirror/llvm).
 
-If you follow the steps provided in Clangs "Getting Started" tutorial (https://clang.llvm.org/get_started.html) then you simply need to copy the contents of this repository into the Tools/Extra directory of the Clang project (The Extra directory is an optional directory of Clang, Step 4 of Clangs "Getting Started" gives direction on where to place it). However, I wouldn't recommend overwriting Clangs existing CMakeLists file with the one from this repository, instead copy the relevant instructions into the file from the Clang repository.  
+If you follow the steps provided in Clang's "Getting Started" tutorial (https://clang.llvm.org/get_started.html) then you simply need to copy the contents of this repository into the Tools/Extra directory of the Clang project (the Extra directory is an optional directory of Clang, Step 4 of Clangs "Getting Started" gives direction on where to place it). Rather than overwrite Clang's existing CMakeLists.txt file with the one from this repository, instead copy the relevant instructions into the file from the Clang repository.  
 
-Once the Point-Free folder is in the correct place and your on Step 7 of Clangs "Getting Started" tutorial you must add a few additional compile flags when invoking cmake (namely runtime type information and exception handling):
+Once the Point-Free folder is in the correct place and you're on Step 7 of Clangs "Getting Started" tutorial you must add a few additional compile flags when invoking CMake (namely runtime type information and exception handling):
+
 ```
 cmake -DLLVM_ENABLE_RTTI:BOOL=TRUE -DLLVM_ENABLE_EH:BOOL=TRUE ../llvm
 ```
+
 Afterwards you can simply invoke: 
+
 ```
 make point-free
 ```
+
 instead of: 
+
 ```
 make clang
 ```
