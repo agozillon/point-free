@@ -29,7 +29,7 @@ using namespace clang::tooling;
 using namespace llvm;
 
 // A help message for this specific tool can be added afterwards.
-static cl::extrahelp MoreHelp("\n-structorclass <structure or class name> used to specify the class to search for the type alias or definition you have specified. \n \n-typealiasordef <type alias or type definition> used to specify the type to search for within the specified class, this type in conjunction with the class you specified will be made into a point-free metafunction. \n");
+static cl::extrahelp MoreHelp("\n-classname <structure or class name> used to specify the class to search for the type alias or definition you have specified. \n \n-membername <type alias or type definition> used to specify the type to search for within the specified class, this type in conjunction with the class you specified will be made into a point-free metafunction. \n");
 
 
 // CommonOptionsParser declares HelpMessage with a description of the common
