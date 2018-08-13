@@ -10,7 +10,7 @@ The Point-Free Clang Libtool is a console application that will convert pointful
 
 Point-Free programming is a style of programming where functions are designed with no explicit arguments (in contrast, a *pointful* function has arguments, each parameter a "point"). Instead, functions are created by the composition or partial application of a curated set of higher-order functions or combinators. The final composition of these combinators still accepts the same number of parameters; and manipulates them to produce an identical result. This style of programming, also known as tacit programming, can lead to more concise function definitions and is encountered in functional programming languages like Haskell.
 
-The following simple example "converts" a pointful lambda function to a point-free function using the Haskell pointfree command-line tool. The result, `const`, assumes that the user has the `const` combinator available to them; though note that pointfree uses only a subset of functions from the Haskell prelude.
+The following simple example "converts" a pointful lambda function to a point-free function using the Haskell pointfree command-line tool. The result, `const`, assumes that the user has the `const` combinator available to them; though note that the tool uses only a subset of functions from the Haskell Prelude.
 
 ```
 $ pf \x y -> x
