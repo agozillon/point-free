@@ -33,7 +33,7 @@ Everything following `--` is an argument directed towards the Clang compiler rat
 
 The following C++ code excert can be compared to the first Haskell example above. Here the *pointful* metafunction class template `First` "returns" the first template argument via the `type` member.
 
-```
+```C++
 template <class T, class U>
 struct First { using type = T; };
 ```
@@ -47,7 +47,7 @@ const_
 
 We are then able to make the following two assertions:
 
-```
+```C++
 static_assert(std::is_same_v<First<int,char>::type,int>);
 static_assert(std::is_same_v<First<int,char>::type,eval<const_,int,char>>);
 ```
