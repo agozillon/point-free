@@ -27,7 +27,7 @@ const id
 
 As with the *Haskell* pointfree tool, users of our tool are encouraged to have fun, and explore the point-free idiom; potentially re-using existing metafunction combinators from the Curtains library. 
 
-Our Point-Free tool expects the user to provide three things: a file name; the name of a class template (i.e. the metafunction); and the name of the typedef member containing the metafunction result (the name `type` is used by default). By providing the class template within a file, we allow the user to make use of auxiliary classes in the definition in the class template's definition.
+Our Point-Free tool expects the user to provide three things: a file name; the name of a class template (i.e. the metafunction); and the name of the typedef member containing the metafunction result (the name `type` is used by default). By providing the class template within a file, we allow the user to make use of auxiliary classes in the definition of each class template.
 
 Everything following `--` is an argument directed towards the Clang compiler rather than the tool itself. In this case we've elected to set the standard and pass the Curtains library to it.
 
