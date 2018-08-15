@@ -103,5 +103,5 @@ It is notable that as this tool is a Libtool it's possible that it may have some
 
 Curtains API Repository: https://bitbucket.org/pgk/curtains
  
-Test File Repository: https://github.com/agozillon/point-free_tests
+Test File Repository: https://github.com/agozillon/point-free-tests
  
